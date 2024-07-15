@@ -1,7 +1,7 @@
 import tdt
 import numpy as np
 import pandas as pd
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 '''Boris Feature Extraction'''
 
@@ -66,3 +66,5 @@ def extract_manual_annotation_behaviors(tdt_recording, bout_aggregated_csv_path)
         
         # Call the helper function to extract and add the behavior events to tdt_recording
         extract_single_behavior(tdt_recording, behavior, behavior_df)
+
+def plot_raw_signal()
