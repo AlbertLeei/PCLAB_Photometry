@@ -188,61 +188,54 @@ class TDTData:
             # Call the helper function to extract and add the behavior events
             self.extract_single_behavior(behavior, behavior_df)
 
-    def combine_consecutive_behaviors(self, behavior_name, bout_time_threshold=10, min_occurrences=1):
-        '''
-        Combine consecutive behavior events based on a specified time threshold 
-        and minimum number of occurrences.
-
-        Parameters:
-        behavior_name (str): The name of the behavior to process.
-        bout_time_threshold (int): The minimum time between events to consider them separate bouts.
-        min_occurrences (int): The minimum number of occurrences to consider a valid bout.
-        '''
+    def combine_consecutive_behaviors(self, behavior_name, bout_time_threshold=2, min_occurrences=1):
         behavior_event = behavior_name + '_event'
+        behavior_onsets = self.behaviors[behavior_event].onset
+        behavior_offsets = self.behaviors[behavior_event].offset
 
-        behavior_onsets = np.array(self.behaviors[behavior_event].onset)
-        behavior_offsets = np.array(self.behaviors[behavior_event].offset)
-
-        # Calculate the differences between consecutive onsets
-        on_diff = np.diff(behavior_onsets)
-        bout_indices = np.where(on_diff >= bout_time_threshold)[0]
-
-        # Initialize lists for combined onsets and offsets
         combined_onsets = []
         combined_offsets = []
 
-        # Combine consecutive behaviors based on the threshold
-        start_idx = 0
-        for ind in bout_indices:
-            combined_onsets.append(behavior_onsets[start_idx])
-            combined_offsets.append(behavior_offsets[ind])
-            start_idx = ind + 1
+        if len(behavior_onsets) == 0:
+            return
 
-        # Handle the last bout
-        combined_onsets.append(behavior_onsets[bout_indices[-1] + 1])
-        combined_offsets.append(behavior_offsets[-1])
+        start_idx = 0
+
+        while start_idx < len(behavior_onsets):
+            bout_indices = np.where(np.diff(behavior_onsets[start_idx:]) >= bout_time_threshold)[0]
+
+            if len(bout_indices) == 0:
+                combined_onsets.append(behavior_onsets[start_idx])
+                combined_offsets.append(behavior_offsets[-1])
+                break
+
+            for idx in bout_indices:
+                combined_onsets.append(behavior_onsets[start_idx])
+                combined_offsets.append(behavior_offsets[start_idx + idx])
+                start_idx += idx + 1
+
+            if start_idx < len(behavior_onsets):
+                combined_onsets.append(behavior_onsets[start_idx])
+                combined_offsets.append(behavior_offsets[start_idx])
+
+            start_idx += 1
 
         # Filter out bouts with fewer than the minimum occurrences
-        valid_onsets = []
-        valid_offsets = []
+        valid_indices = []
+        for i in range(len(combined_onsets)):
+            num_occurrences = len([1 for onset in behavior_onsets if combined_onsets[i] <= onset <= combined_offsets[i]])
+            if num_occurrences >= min_occurrences:
+                valid_indices.append(i)
 
-        for on, off in zip(combined_onsets, combined_offsets):
-            count = len(np.where((behavior_onsets >= on) & (behavior_onsets <= off))[0])
-            if count >= min_occurrences:
-                valid_onsets.append(on)
-                valid_offsets.append(off)
-
-        # Update the behavior dictionary with valid bouts
-        self.behaviors[behavior_event].onset = valid_onsets 
-        self.behaviors[behavior_event].offset = valid_offsets
-
+        self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
+        self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
     '''********************************** PLOTTING **********************************'''
     def plot_behavior_event(self, behavior_name, plot_type='dFF'):
         '''
         Plot Delta F/F (dFF) with behavior events.
 
         Parameters:
-        behavior_name (str): The name of the behavior.
+        behavior_name (str): The name of the behavior. Use 'all' to plot all behaviors.
         plot_type (str): The type of plot. Options are 'dFF', 'zscore', 'raw'.
         '''
         if plot_type == 'dFF':
@@ -264,27 +257,36 @@ class TDTData:
         else:
             raise ValueError("Invalid plot_type. Choose from 'dFF', 'zscore', or 'raw'.")
 
-        behavior_event = behavior_name + '_event'
-
-        # Ensure the behavior events are combined before plotting
-        self.combine_consecutive_behaviors(behavior_name)
-
-        behavior_onsets = self.behaviors[behavior_event].onset
-        behavior_offsets = self.behaviors[behavior_event].offset
-
         fig = plt.figure(figsize=(18, 6))
         ax = fig.add_subplot(111)
-        for on, off in zip(behavior_onsets, behavior_offsets):
-            ax.axvspan(on, off, alpha=0.25, color='dodgerblue')
-
         ax.plot(self.timestamps, y_data, linewidth=2, color='green', label=plot_type)
+
+        if behavior_name == 'all':
+            for behavior_event in self.behaviors.keys():
+                if behavior_event.endswith('_event'):
+                    self.combine_consecutive_behaviors(behavior_event.replace('_event', ''))
+                    behavior_onsets = self.behaviors[behavior_event].onset
+                    behavior_offsets = self.behaviors[behavior_event].offset
+                    for on, off in zip(behavior_onsets, behavior_offsets):
+                        ax.axvspan(on, off, alpha=0.25, label=behavior_event, color=np.random.rand(3,))
+        else:
+            behavior_event = behavior_name + '_event'
+            if behavior_event not in self.behaviors:
+                raise ValueError(f"Behavior event '{behavior_event}' not found in behaviors.")
+            self.combine_consecutive_behaviors(behavior_name)
+            behavior_onsets = self.behaviors[behavior_event].onset
+            behavior_offsets = self.behaviors[behavior_event].offset
+            for on, off in zip(behavior_onsets, behavior_offsets):
+                ax.axvspan(on, off, alpha=0.25, color='dodgerblue')
+
         ax.set_ylabel(y_label)
         ax.set_xlabel('Seconds')
-        ax.set_title(f'{y_title} with {behavior_name} Bouts')
+        ax.set_title(f'{y_title} with {behavior_name} Bouts' if behavior_name != 'all' else f'{y_title} with All Behavior Events')
         ax.legend()
 
         plt.tight_layout()
         plt.show()
+
 
     def plot_raw_trace(self):
         if self.DA in self.streams and self.ISOS in self.streams:
