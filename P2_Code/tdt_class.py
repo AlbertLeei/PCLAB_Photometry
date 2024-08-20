@@ -23,6 +23,18 @@ class TDTData:
         self.std_dFF = None
         self.zscore = None
 
+    '''********************************** PRINTING INFO **********************************'''
+    def print_behaviors(self):
+        """
+        Prints all behavior names in self.behaviors.
+        """
+        if not self.behaviors:
+            print("No behaviors found.")
+        else:
+            print("Behavior names in self.behaviors:")
+            for behavior_name in self.behaviors.keys():
+                print(behavior_name)
+
     '''********************************** FILTERING **********************************'''
     def smooth_signal(self, filter_window=101):
         '''
@@ -189,7 +201,7 @@ class TDTData:
             self.extract_single_behavior(behavior, behavior_df)
 
     def combine_consecutive_behaviors(self, behavior_name, bout_time_threshold=2, min_occurrences=1):
-        behavior_event = behavior_name + '_event'
+        behavior_event = behavior_name
         behavior_onsets = self.behaviors[behavior_event].onset
         behavior_offsets = self.behaviors[behavior_event].offset
 
@@ -202,18 +214,22 @@ class TDTData:
         start_idx = 0
 
         while start_idx < len(behavior_onsets):
+            # Identify indices where the difference between consecutive onsets exceeds the threshold
             bout_indices = np.where(np.diff(behavior_onsets[start_idx:]) >= bout_time_threshold)[0]
 
             if len(bout_indices) == 0:
+                # If no more indices found, combine the rest of the events
                 combined_onsets.append(behavior_onsets[start_idx])
                 combined_offsets.append(behavior_offsets[-1])
                 break
 
             for idx in bout_indices:
-                combined_onsets.append(behavior_onsets[start_idx])
-                combined_offsets.append(behavior_offsets[start_idx + idx])
-                start_idx += idx + 1
+                if start_idx + idx < len(behavior_onsets):
+                    combined_onsets.append(behavior_onsets[start_idx])
+                    combined_offsets.append(behavior_offsets[start_idx + idx])
+                    start_idx += idx + 1
 
+            # If we didn't process all onsets, add the last segment
             if start_idx < len(behavior_onsets):
                 combined_onsets.append(behavior_onsets[start_idx])
                 combined_offsets.append(behavior_offsets[start_idx])
@@ -227,8 +243,10 @@ class TDTData:
             if num_occurrences >= min_occurrences:
                 valid_indices.append(i)
 
+        # Update the behavior with the combined onsets and offsets
         self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
         self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
+
     '''********************************** PLOTTING **********************************'''
     def plot_behavior_event(self, behavior_name, plot_type='dFF'):
         '''
@@ -238,6 +256,7 @@ class TDTData:
         behavior_name (str): The name of the behavior. Use 'all' to plot all behaviors.
         plot_type (str): The type of plot. Options are 'dFF', 'zscore', 'raw'.
         '''
+        y_data = []
         if plot_type == 'dFF':
             if self.dFF is None:
                 self.compute_dff()
@@ -259,21 +278,21 @@ class TDTData:
 
         fig = plt.figure(figsize=(18, 6))
         ax = fig.add_subplot(111)
-        ax.plot(self.timestamps, y_data, linewidth=2, color='green', label=plot_type)
+        ax.plot(self.timestamps, np.array(y_data), linewidth=2, color='green', label=plot_type)
 
         if behavior_name == 'all':
             for behavior_event in self.behaviors.keys():
                 if behavior_event.endswith('_event'):
-                    self.combine_consecutive_behaviors(behavior_event.replace('_event', ''))
+                    # self.combine_consecutive_behaviors(behavior_event.replace('_event', ''))
                     behavior_onsets = self.behaviors[behavior_event].onset
                     behavior_offsets = self.behaviors[behavior_event].offset
                     for on, off in zip(behavior_onsets, behavior_offsets):
                         ax.axvspan(on, off, alpha=0.25, label=behavior_event, color=np.random.rand(3,))
         else:
-            behavior_event = behavior_name + '_event'
-            if behavior_event not in self.behaviors:
+            behavior_event = behavior_name #+ '_event'
+            if behavior_event not in self.behaviors.keys():
                 raise ValueError(f"Behavior event '{behavior_event}' not found in behaviors.")
-            self.combine_consecutive_behaviors(behavior_name)
+            # self.combine_consecutive_behaviors(behavior_name)
             behavior_onsets = self.behaviors[behavior_event].onset
             behavior_offsets = self.behaviors[behavior_event].offset
             for on, off in zip(behavior_onsets, behavior_offsets):
