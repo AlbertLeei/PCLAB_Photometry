@@ -3,11 +3,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.signal as ss
 import tdt
+import os
 
 class TDTData:
-    def __init__(self, tdt_data):
+    def __init__(self, tdt_data, folder_path):
         self.streams = {}
         self.behaviors = tdt_data.epocs  # renamed to behaviors
+
+        # Extract the subject name from the folder or file name
+        self.subject_name = os.path.basename(folder_path).split('-')[0]
 
         # Assume all streams have the same sampling frequency and length
         self.fs = tdt_data.streams['_465A'].fs
@@ -85,6 +89,25 @@ class TDTData:
             if stream_name in self.streams:
                 self.streams[stream_name] = self.streams[stream_name][ind:]
         self.timestamps = self.timestamps[ind:]
+
+    def verify_signal(self):
+        """
+        Verifies that all streams (DA and ISOS) have the same length by trimming them to the shortest length.
+        This function also adjusts the timestamps accordingly. If trimming occurs, it prints a message.
+        """
+        da_length = len(self.streams[self.DA])
+        isos_length = len(self.streams[self.ISOS])
+        min_length = min(da_length, isos_length)
+        
+        if da_length != min_length or isos_length != min_length:
+            # Trim the streams to the shortest length
+            self.streams[self.DA] = self.streams[self.DA][:min_length]
+            self.streams[self.ISOS] = self.streams[self.ISOS][:min_length]
+            
+            # Trim the timestamps to match the new signal length
+            self.timestamps = self.timestamps[:min_length]
+            
+            print(f"Signals trimmed to {min_length} samples to match the shortest signal.")
 
 
     '''********************************** DFF AND ZSCORE **********************************'''
@@ -283,16 +306,14 @@ class TDTData:
         if behavior_name == 'all':
             for behavior_event in self.behaviors.keys():
                 if behavior_event.endswith('_event'):
-                    # self.combine_consecutive_behaviors(behavior_event.replace('_event', ''))
                     behavior_onsets = self.behaviors[behavior_event].onset
                     behavior_offsets = self.behaviors[behavior_event].offset
                     for on, off in zip(behavior_onsets, behavior_offsets):
                         ax.axvspan(on, off, alpha=0.25, label=behavior_event, color=np.random.rand(3,))
         else:
-            behavior_event = behavior_name #+ '_event'
+            behavior_event = behavior_name
             if behavior_event not in self.behaviors.keys():
                 raise ValueError(f"Behavior event '{behavior_event}' not found in behaviors.")
-            # self.combine_consecutive_behaviors(behavior_name)
             behavior_onsets = self.behaviors[behavior_event].onset
             behavior_offsets = self.behaviors[behavior_event].offset
             for on, off in zip(behavior_onsets, behavior_offsets):
@@ -300,14 +321,16 @@ class TDTData:
 
         ax.set_ylabel(y_label)
         ax.set_xlabel('Seconds')
-        ax.set_title(f'{y_title} with {behavior_name} Bouts' if behavior_name != 'all' else f'{y_title} with All Behavior Events')
+        ax.set_title(f'{self.subject_name}: {y_title} with {behavior_name} Bouts' if behavior_name != 'all' else f'{self.subject_name}: {y_title} with All Behavior Events')
         ax.legend()
 
         plt.tight_layout()
         plt.show()
 
-
     def plot_raw_trace(self):
+        '''
+        Plots the raw trace of DA and ISOS signals.
+        '''
         if self.DA in self.streams and self.ISOS in self.streams:
             fig1 = plt.figure(figsize=(18, 6))
             ax1 = fig1.add_subplot(111)
@@ -315,7 +338,7 @@ class TDTData:
             p2, = ax1.plot(self.timestamps, self.streams[self.ISOS], linewidth=2, color='blueviolet', label='ISOS')
             ax1.set_ylabel('mV')
             ax1.set_xlabel('Seconds', fontsize=14)
-            ax1.set_title('Raw Demodulated Responses', fontsize=14)
+            ax1.set_title(f'{self.subject_name}: Raw Demodulated Responses', fontsize=14)
             ax1.legend(handles=[p1, p2], loc='upper right')
             plt.show()
 
@@ -328,7 +351,7 @@ class TDTData:
             plt.plot(self.timestamps, self.dFF, label='dFF', color='green')
             plt.xlabel('Seconds')
             plt.ylabel('ΔF/F')
-            plt.title('Delta F/F (dFF) Signal')
+            plt.title(f'{self.subject_name}: Delta F/F (dFF) Signal')
             plt.legend()
             plt.show()
         else:
@@ -345,6 +368,6 @@ class TDTData:
         plt.plot(self.timestamps, self.zscore, linewidth=2, color='red', label='z-score')
         plt.ylabel('z-score')
         plt.xlabel('Seconds', fontsize=14)
-        plt.title('Z-score of Delta F/F (dFF) Signal', fontsize=14)
+        plt.title(f'{self.subject_name}: Z-score of Delta F/F (dFF) Signal', fontsize=14)
         plt.legend(loc='upper right')
         plt.show()
