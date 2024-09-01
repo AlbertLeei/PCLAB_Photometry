@@ -27,6 +27,8 @@ class TDTData:
         self.std_dFF = None
         self.zscore = None
 
+        self.psth_df = None
+
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
         """
@@ -111,14 +113,51 @@ class TDTData:
 
 
     '''********************************** DFF AND ZSCORE **********************************'''
-    def compute_dff(self):
+    def execute_controlFit_dff(self, control, signal, filter_window=101):
+        """
+        Fits the control channel to the signal channel and calculates delta F/F (dFF).
+
+        Parameters:
+        control (numpy.array): The control signal (e.g., isosbestic control signal).
+        signal (numpy.array): The signal of interest (e.g., dopamine signal).
+        filter_window (int): The window size for the moving average filter.
+
+        Returns:
+        norm_data (numpy.array): The normalized delta F/F signal.
+        control_fit (numpy.array): The fitted control signal.
+        """
+        if filter_window > 1:
+            # Smoothing both signals
+            control_smooth = ss.filtfilt(np.ones(filter_window) / filter_window, 1, control)
+            signal_smooth = ss.filtfilt(np.ones(filter_window) / filter_window, 1, signal)
+        else:
+            control_smooth = control
+            signal_smooth = signal
+
+        # Fitting the control signal to the signal of interest
+        p = np.polyfit(control_smooth, signal_smooth, 1)
+        control_fit = p[0] * control_smooth + p[1]
+
+        # Calculating delta F/F (dFF)
+        norm_data = 100 * (signal_smooth - control_fit) / control_fit
+
+        return norm_data, control_fit
+
+    def compute_dff(self, filter_window=101):
+        """
+        Computes the delta F/F (dFF) signal by fitting the isosbestic control signal to the signal of interest.
+        
+        Parameters:
+        filter_window (int): The window size for the moving average filter.
+        """
         if 'DA' in self.streams and 'ISOS' in self.streams:
-            x = np.array(self.streams['ISOS'])
-            y = np.array(self.streams['DA'])
-            bls = np.polyfit(x, y, 1)
-            Y_fit_all = np.multiply(bls[0], x) + bls[1]
-            Y_dF_all = y - Y_fit_all
-            self.dFF = np.multiply(100, np.divide(Y_dF_all, Y_fit_all))
+            signal = np.array(self.streams['DA'])
+            control = np.array(self.streams['ISOS'])
+            
+            # Call the execute_controlFit_dff method
+            self.dFF, self.control_fit = self.execute_controlFit_dff(control, signal, filter_window)
+            
+            # Calculate the standard deviation of dFF
             self.std_dFF = np.std(self.dFF)
         else:
             self.dFF = None
@@ -181,7 +220,7 @@ class TDTData:
         offset_times = behavior_df['Stop (s)'].values.tolist()
         
         # Define the event name by appending '_event' to the behavior name
-        event_name = behavior_name + '_event'
+        event_name = behavior_name
         
         # Create a data array filled with 1s, with the same length as onset_times
         data_arr = [1] * len(onset_times)
@@ -269,6 +308,94 @@ class TDTData:
         # Update the behavior with the combined onsets and offsets
         self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
         self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
+
+        '''********************************** PSTH **********************************'''
+    def compute_psth(self, behavior_name, pre_time=10, post_time=10, signal_type='dFF'):
+        """
+        Compute the Peri-Stimulus Time Histogram (PSTH) for a given behavior.
+
+        Parameters:
+        behavior_name (str): The name of the behavior event to use for PSTH computation.
+        pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
+        post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
+        signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
+
+        Returns:
+        psth (pd.DataFrame): DataFrame containing the PSTH with columns for each time point.
+        """
+        if behavior_name not in self.behaviors.keys():
+            raise ValueError(f"Behavior '{behavior_name}' not found in behaviors.")
+
+        behavior_onsets = self.behaviors[behavior_name].onset
+        sampling_rate = self.fs
+
+        # Select the appropriate signal type
+        if signal_type == 'dFF':
+            if self.dFF is None:
+                self.compute_dff()
+            signal = np.array(self.dFF)
+        elif signal_type == 'zscore':
+            if self.zscore is None:
+                self.compute_zscore()
+            signal = np.array(self.zscore)
+        else:
+            raise ValueError("Invalid signal_type. Choose 'dFF' or 'zscore'.")
+
+        # Initialize PSTH data structure
+        n_samples_pre = int(pre_time * sampling_rate)
+        n_samples_post = int(post_time * sampling_rate)
+        psth_matrix = []
+
+        # Compute PSTH for each behavior onset
+        for onset in behavior_onsets:
+            onset_idx = np.searchsorted(self.timestamps, onset)
+            start_idx = max(onset_idx - n_samples_pre, 0)
+            end_idx = min(onset_idx + n_samples_post, len(signal))
+
+            # Extract signal around the event
+            psth_segment = signal[start_idx:end_idx]
+
+            # Pad if necessary to ensure equal length
+            if len(psth_segment) < n_samples_pre + n_samples_post:
+                padding = np.full((n_samples_pre + n_samples_post) - len(psth_segment), np.nan)
+                psth_segment = np.concatenate([psth_segment, padding])
+
+            psth_matrix.append(psth_segment)
+
+        # Convert to DataFrame for ease of analysis
+        time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
+        psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
+
+        self.psth_df = psth_df
+        return psth_df
+
+    def plot_psth(self, behavior_name, signal_type='dFF'):
+        """
+        Plot the Peri-Stimulus Time Histogram (PSTH).
+
+        Parameters:
+        psth_df (pd.DataFrame): DataFrame containing the PSTH data.
+        behavior_name (str): Name of the behavior event for labeling the plot.
+        signal_type (str): Type of signal used for PSTH computation. Options are 'dFF' or 'zscore'.
+        """
+        if self.psth_df is None or self.psth_df.empty:
+            self.compute_psth(behavior_name, pre_time=10, post_time=10, signal_type=signal_type)
+
+        psth_df = self.psth_df
+
+        mean_psth = psth_df.mean(axis=0)
+        std_psth = psth_df.std(axis=0)
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(psth_df.columns, mean_psth, label=f'{signal_type} Mean')
+        plt.fill_between(psth_df.columns, mean_psth - std_psth, mean_psth + std_psth, alpha=0.3)
+
+        plt.xlabel('Time (s)')
+        plt.ylabel(f'{signal_type}')
+        plt.title(f'PSTH for {behavior_name}')
+        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+        plt.legend()
+        plt.show()
 
     '''********************************** PLOTTING **********************************'''
     def plot_behavior_event(self, behavior_name, plot_type='dFF'):
