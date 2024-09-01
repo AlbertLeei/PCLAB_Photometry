@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import scipy.signal as ss
 import tdt
 import os
@@ -27,7 +28,7 @@ class TDTData:
         self.std_dFF = None
         self.zscore = None
 
-        self.psth_df = None
+        self.psth_df = pd.DataFrame()
 
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
@@ -42,25 +43,38 @@ class TDTData:
                 print(behavior_name)
 
     '''********************************** FILTERING **********************************'''
-    def smooth_signal(self, filter_window=101):
+    def smooth_signal(self, filter_window=101, filter_type='moving_average'):
         '''
-        Smooths the signal using a moving average filter.
-        
+        Smooths the signal using a specified filter type.
+
         Parameters:
-        filter_window (int): The window size for the moving average filter.
+        filter_window (int): The window size for the filter.
+        filter_type (str): The type of filter to use. Options are 'moving_average' or 'lowpass'.
         '''
         for stream_name in ['DA', 'ISOS']:
             if stream_name in self.streams:
                 data = self.streams[stream_name]
-                if filter_window > 1:
+
+                if filter_type == 'moving_average':
+                    # Moving average filter
                     b = np.ones(filter_window) / filter_window
                     a = 1
-                    smoothed_data = ss.filtfilt(b, a, data)
-                    self.streams[stream_name] = smoothed_data
-                elif filter_window == 0:
-                    self.streams[stream_name] = data
+                elif filter_type == 'lowpass':
+                    # Lowpass filter (Butterworth)
+                    nyquist = 0.5 * self.fs
+                    cutoff_freq = 1.0  # Set cutoff frequency in Hz (adjust as needed)
+                    normal_cutoff = cutoff_freq / nyquist
+                    b, a = ss.butter(N=filter_window, Wn=normal_cutoff, btype='low', analog=False)
                 else:
-                    raise ValueError("filter_window must be greater than 0")
+                    raise ValueError("Invalid filter_type. Choose 'moving_average' or 'lowpass'.")
+
+                smoothed_data = ss.filtfilt(b, a, data)
+                self.streams[stream_name] = smoothed_data
+
+        # Clear dFF and zscore since the raw data has changed
+        self.dFF = None
+        self.zscore = None
+
                 
     def downsample_data(self, N=10):
         downsampled_timestamps = self.timestamps[::N]
@@ -71,16 +85,41 @@ class TDTData:
                 self.streams[stream_name] = downsampled_data
         self.timestamps = downsampled_timestamps
 
+        # Clear dFF and zscore since the raw data has changed
+        self.dFF = None
+        self.zscore = None
+
     def remove_time(self, start_time, end_time):
+        """
+        Removes a segment of time from the data streams and timestamps and then verifies the signal length.
+        
+        Parameters:
+        start_time (float): The start time of the segment to be removed (in seconds).
+        end_time (float): The end time of the segment to be removed (in seconds).
+        """
+        # Find the indices corresponding to the start and end times
         start_index = np.where(self.timestamps >= start_time)[0][0]
         end_index = np.where(self.timestamps <= end_time)[0][-1]
+        
+        # Create an array of boolean values, keeping all indices outside the specified range
         keep_indices = np.ones_like(self.timestamps, dtype=bool)
         keep_indices[start_index:end_index+1] = False
+        
+        # Update the streams by concatenating the parts of the signal that are kept
         for stream_name in ['DA', 'ISOS']:
             if stream_name in self.streams:
                 self.streams[stream_name] = self.streams[stream_name][keep_indices]
+        
+        # Update the timestamps by concatenating the kept timestamps
         self.timestamps = self.timestamps[keep_indices]
+        
+        # Clear dFF and zscore since the raw data has changed
+        self.dFF = None
+        self.zscore = None
 
+        # Verify the signal lengths
+        self.verify_signal()
+    
     def remove_initial_LED_artifact(self, t=10):
         '''
         This function removes the initial artifact caused by the onset of LEDs turning on.
@@ -92,10 +131,14 @@ class TDTData:
                 self.streams[stream_name] = self.streams[stream_name][ind:]
         self.timestamps = self.timestamps[ind:]
 
+        # Clear dFF and zscore since the raw data has changed
+        self.dFF = None
+        self.zscore = None
+
     def verify_signal(self):
         """
         Verifies that all streams (DA and ISOS) have the same length by trimming them to the shortest length.
-        This function also adjusts the timestamps accordingly. If trimming occurs, it prints a message.
+        This function also adjusts the timestamps accordingly. No smoothing is applied.
         """
         da_length = len(self.streams[self.DA])
         isos_length = len(self.streams[self.ISOS])
@@ -310,7 +353,7 @@ class TDTData:
         self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
 
         '''********************************** PSTH **********************************'''
-    def compute_psth(self, behavior_name, pre_time=10, post_time=10, signal_type='dFF'):
+    def compute_psth(self, behavior_name, pre_time=5, post_time=10, signal_type='dFF'):
         """
         Compute the Peri-Stimulus Time Histogram (PSTH) for a given behavior.
 
@@ -379,7 +422,7 @@ class TDTData:
         signal_type (str): Type of signal used for PSTH computation. Options are 'dFF' or 'zscore'.
         """
         if self.psth_df is None or self.psth_df.empty:
-            self.compute_psth(behavior_name, pre_time=10, post_time=10, signal_type=signal_type)
+            self.compute_psth(behavior_name, pre_time=5, post_time=10, signal_type=signal_type)
 
         psth_df = self.psth_df
 
@@ -454,47 +497,49 @@ class TDTData:
         plt.tight_layout()
         plt.show()
 
-    def plot_raw_trace(self):
+    def plot(self, plot_type='zscore'):
         '''
-        Plots the raw trace of DA and ISOS signals.
-        '''
-        if self.DA in self.streams and self.ISOS in self.streams:
-            fig1 = plt.figure(figsize=(18, 6))
-            ax1 = fig1.add_subplot(111)
-            p1, = ax1.plot(self.timestamps, self.streams[self.DA], linewidth=2, color='blue', label='DA')
-            p2, = ax1.plot(self.timestamps, self.streams[self.ISOS], linewidth=2, color='blueviolet', label='ISOS')
-            ax1.set_ylabel('mV')
-            ax1.set_xlabel('Seconds', fontsize=14)
-            ax1.set_title(f'{self.subject_name}: Raw Demodulated Responses', fontsize=14)
-            ax1.legend(handles=[p1, p2], loc='upper right')
-            plt.show()
+        Plots the selected signal type.
 
-    def plot_dff(self):
+        Parameters:
+        plot_type (str): The type of plot to generate. Options are 'raw', 'dFF', and 'zscore'.
         '''
-        Plots the Delta F/F (dFF) signal.
-        '''
-        if self.dFF is not None:
-            plt.figure(figsize=(18, 6))
-            plt.plot(self.timestamps, self.dFF, label='dFF', color='green')
-            plt.xlabel('Seconds')
-            plt.ylabel('ΔF/F')
-            plt.title(f'{self.subject_name}: Delta F/F (dFF) Signal')
-            plt.legend()
-            plt.show()
+        if plot_type == 'raw':
+            if self.DA in self.streams and self.ISOS in self.streams:
+                plt.figure(figsize=(18, 6))
+                plt.plot(self.timestamps, self.streams[self.DA], linewidth=2, color='blue', label='DA')
+                plt.plot(self.timestamps, self.streams[self.ISOS], linewidth=2, color='blueviolet', label='ISOS')
+                plt.ylabel('mV')
+                plt.title(f'{self.subject_name}: Raw Demodulated Responses')
+                plt.legend(loc='upper right')
+
+        elif plot_type == 'dFF':
+            if self.dFF is not None:
+                plt.figure(figsize=(18, 6))
+                plt.plot(self.timestamps, self.dFF, label='dFF', color='green')
+                plt.ylabel('ΔF/F')
+                plt.title(f'{self.subject_name}: Delta F/F (dFF) Signal')
+                plt.legend(loc='upper right')
+            else:
+                print("dFF data not available. Please compute dFF first.")
+                return
+
+        elif plot_type == 'zscore':
+            if self.zscore is not None and len(self.zscore) > 0:
+                plt.figure(figsize=(18, 6))
+                plt.plot(self.timestamps, self.zscore, linewidth=2, color='red', label='z-score')
+                plt.ylabel('z-score')
+                plt.title(f'{self.subject_name}: Z-score of Delta F/F (dFF) Signal')
+                plt.legend(loc='upper right')
+            else:
+                print("z-score data not available. Please compute z-score first.")
+                return
         else:
-            print("dFF data not available. Please compute dFF first.")
+            raise ValueError("Invalid plot_type. Choose from 'raw', 'dFF', or 'zscore'.")
 
-    def plot_zscore(self):
-        """
-        Plots the z-score of the delta F/F (dFF) signal.
-        """
-        if self.zscore is None or len(self.zscore) == 0:
-            raise ValueError("z-score has not been computed or is empty. Run compute_zscore() first.")
-        
-        plt.figure(figsize=(18, 6))
-        plt.plot(self.timestamps, self.zscore, linewidth=2, color='red', label='z-score')
-        plt.ylabel('z-score')
-        plt.xlabel('Seconds', fontsize=14)
-        plt.title(f'{self.subject_name}: Z-score of Delta F/F (dFF) Signal', fontsize=14)
-        plt.legend(loc='upper right')
+        plt.xlabel('Seconds')
+        ax = plt.gca()
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(10))  # Adjusts the x-axis ticks to show more tick marks
+        ax.xaxis.set_minor_locator(ticker.MultipleLocator(2))   # Adds minor ticks for more granularity
+        plt.grid(True)
         plt.show()
