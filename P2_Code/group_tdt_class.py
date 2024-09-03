@@ -33,13 +33,4 @@ class GroupTDTData:
         """
         return list(self.blocks.keys())
 
-# Example usage
-experiment_folder = r"D:\Pilot_2\Cohort_2\Synapse\Tanks\5_6_24_Pinch_Test_P2-240506-084710"
-group_data = GroupTDTData(experiment_folder)
 
-# Access a specific block
-block_name = 'n1-240506-101729'
-block_data_obj = group_data.get_block(block_name)
-
-# List all loaded blocks
-print(group_data.list_blocks())
