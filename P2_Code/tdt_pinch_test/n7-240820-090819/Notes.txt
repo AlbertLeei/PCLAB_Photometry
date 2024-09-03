@@ -1,0 +1,7 @@
+Experiment: P2_2_Pinch_Test
+Subject: n7
+User: User
+Start: 9:08:23am 08/20/2024
+
+
+Stop: 9:10:37am 08/20/2024
