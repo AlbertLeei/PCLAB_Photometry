@@ -5,6 +5,8 @@ import matplotlib.ticker as ticker
 import scipy.signal as ss
 import tdt
 import os
+from collections import OrderedDict
+
 
 class TDTData:
     def __init__(self, tdt_data, folder_path):
@@ -352,7 +354,8 @@ class TDTData:
         self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
         self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
 
-        '''********************************** PSTH **********************************'''
+
+    '''********************************** PSTH **********************************'''
     def compute_psth(self, behavior_name, pre_time=5, post_time=10, signal_type='dFF'):
         """
         Compute the Peri-Stimulus Time Histogram (PSTH) for a given behavior.
@@ -364,7 +367,8 @@ class TDTData:
         signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
 
         Returns:
-        psth (pd.DataFrame): DataFrame containing the PSTH with columns for each time point.
+        psth_df (pd.DataFrame): DataFrame containing the PSTH with columns for each time point.
+                                Includes both mean and standard deviation.
         """
         if behavior_name not in self.behaviors.keys():
             raise ValueError(f"Behavior '{behavior_name}' not found in behaviors.")
@@ -409,8 +413,60 @@ class TDTData:
         time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
         psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
 
-        self.psth_df = psth_df
-        return psth_df
+        # Calculate the mean and standard deviation for each time point
+        psth_mean = psth_df.mean(axis=0)
+        psth_std = psth_df.std(axis=0)
+
+        # Return a DataFrame with both mean and std
+        result_df = pd.DataFrame({
+            'mean': psth_mean,
+            'std': psth_std
+        })
+
+        self.psth_df = result_df
+        return result_df
+    
+    def find_area_and_peak(self, behavior_name, peak_startPoint, peak_endPoint):
+        if self.psth_df.empty:
+            raise ValueError("PSTH DataFrame is empty. Compute PSTH first.")
+
+        psth_mean = self.psth_df['mean'].values
+        timestamps = self.psth_df.index.values
+
+        peak_startPoint = np.asarray(peak_startPoint)
+        peak_endPoint = np.asarray(peak_endPoint)
+
+        peak_startPoint = peak_startPoint[~np.isnan(peak_startPoint)]
+        peak_endPoint = peak_endPoint[~np.isnan(peak_endPoint)]
+
+        if len(peak_startPoint) != len(peak_endPoint):
+            raise ValueError('Number of Peak Start Time and Peak End Time are unequal.')
+
+        if np.less_equal(peak_endPoint, peak_startPoint).any():
+            raise ValueError('Peak End Time is lesser than or equal to Peak Start Time.')
+
+        peak_area = OrderedDict()
+
+        if peak_startPoint.shape[0] == 0 or peak_endPoint.shape[0] == 0:
+            peak_area['peak'] = np.nan
+            peak_area['area'] = np.nan
+
+        for i in range(peak_startPoint.shape[0]):
+            startPtForPeak = np.where(timestamps >= peak_startPoint[i])[0]
+            endPtForPeak = np.where(timestamps >= peak_endPoint[i])[0]
+            if len(startPtForPeak) >= 1 and len(endPtForPeak) >= 1:
+                peakPoint_pos = startPtForPeak[0] + np.argmax(psth_mean[startPtForPeak[0]:endPtForPeak[0]])
+                peakPoint_neg = startPtForPeak[0] + np.argmin(psth_mean[startPtForPeak[0]:endPtForPeak[0]])
+                peak_area[f'peak_pos_{i+1}'] = np.amax(psth_mean[peakPoint_pos])
+                peak_area[f'peak_neg_{i+1}'] = np.amin(psth_mean[peakPoint_neg])
+                peak_area[f'area_{i+1}'] = np.trapz(psth_mean[startPtForPeak[0]:endPtForPeak[0]])
+            else:
+                peak_area[f'peak_{i+1}'] = np.nan
+                peak_area[f'area_{i+1}'] = np.nan
+
+        self.peak_area_results[behavior_name] = peak_area
+        return peak_area
+
 
     def plot_psth(self, behavior_name, signal_type='dFF'):
         """
@@ -441,14 +497,15 @@ class TDTData:
         plt.show()
 
     '''********************************** PLOTTING **********************************'''
-    def plot_behavior_event(self, behavior_name, plot_type='dFF'):
-        '''
-        Plot Delta F/F (dFF) with behavior events.
+    def plot_behavior_event(self, behavior_name, plot_type='dFF', ax=None):
+        """
+        Plot Delta F/F (dFF) with behavior events. Can be used to plot in a given Axes object or individually.
 
         Parameters:
-        behavior_name (str): The name of the behavior. Use 'all' to plot all behaviors.
-        plot_type (str): The type of plot. Options are 'dFF', 'zscore', 'raw'.
-        '''
+        - behavior_name: The name of the behavior to plot. Use 'all' to plot all behaviors.
+        - plot_type: The type of plot. Options are 'dFF', 'zscore', or 'raw'.
+        - ax: An optional matplotlib Axes object. If provided, the plot will be drawn on this Axes.
+        """
         y_data = []
         if plot_type == 'dFF':
             if self.dFF is None:
@@ -469,8 +526,9 @@ class TDTData:
         else:
             raise ValueError("Invalid plot_type. Choose from 'dFF', 'zscore', or 'raw'.")
 
-        fig = plt.figure(figsize=(18, 6))
-        ax = fig.add_subplot(111)
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(18, 6))
+
         ax.plot(self.timestamps, np.array(y_data), linewidth=2, color='green', label=plot_type)
 
         if behavior_name == 'all':
@@ -494,8 +552,9 @@ class TDTData:
         ax.set_title(f'{self.subject_name}: {y_title} with {behavior_name} Bouts' if behavior_name != 'all' else f'{self.subject_name}: {y_title} with All Behavior Events')
         ax.legend()
 
-        plt.tight_layout()
-        plt.show()
+        if ax is None:
+            plt.tight_layout()
+            plt.show()
 
     def plot(self, plot_type='zscore'):
         '''

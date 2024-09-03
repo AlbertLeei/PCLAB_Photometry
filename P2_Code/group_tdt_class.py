@@ -1,6 +1,8 @@
 import os
 import tdt
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from single_tdt_class import TDTData
 
 class GroupTDTData:
@@ -11,6 +13,7 @@ class GroupTDTData:
         self.experiment_folder_path = experiment_folder_path
         self.csv_base_path = csv_base_path
         self.blocks = {}
+        self.group_psth = None
 
         self.load_blocks()
 
@@ -46,7 +49,7 @@ class GroupTDTData:
             csv_file_name = f"{block_folder}.csv"
             csv_file_path = os.path.join(self.csv_base_path, csv_file_name)
             if os.path.exists(csv_file_path):
-                print("found csv")
+                print(f"Processing {block_folder}...")
                 tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
                 if remove_led_artifact:
                     tdt_data_obj.remove_initial_LED_artifact(t=t)
@@ -55,7 +58,98 @@ class GroupTDTData:
                 tdt_data_obj.compute_dff()
                 tdt_data_obj.compute_zscore()
 
-    def plot_behavior(self, behavior_name='Pinch', plot_type='zscore', figsize=(18, 5)):
+    def compute_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
+        """
+        Computes the group-level PSTH for the specified behavior and stores it in self.group_psth.
+        """
+        psths = []
+        for block_folder, tdt_data_obj in self.blocks.items():
+            # Compute individual PSTH
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+            psths.append(psth_df.mean(axis=0).values)
+
+        # Ensure all PSTHs have the same length by trimming or padding
+        min_length = min(len(psth) for psth in psths)
+        trimmed_psths = [psth[:min_length] for psth in psths]
+
+        # Convert list of arrays to a DataFrame
+        self.group_psth = pd.DataFrame(trimmed_psths).mean(axis=0)
+        self.group_psth.index = psth_df.columns[:min_length]
+
+    def plot_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
+        """
+        Plots the group-level PSTH for the specified behavior, including the variance (standard deviation) between trials.
+        """
+        if self.group_psth is None:
+            raise ValueError("Group PSTH has not been computed. Call compute_group_psth first.")
+
+        psths_mean = []
+        psths_std = []
+        for block_folder, tdt_data_obj in self.blocks.items():
+            # Compute individual PSTH
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+            psths_mean.append(psth_df['mean'].values)
+            psths_std.append(psth_df['std'].values)
+
+        # Convert list of arrays to DataFrames
+        psth_mean_df = pd.DataFrame(psths_mean)
+        psth_std_df = pd.DataFrame(psths_std)
+
+        # Calculate the mean and standard deviation across blocks
+        group_psth_mean = psth_mean_df.mean(axis=0)
+        group_psth_std = psth_std_df.mean(axis=0)  # You can also sum variances (std^2) and then take sqrt
+
+        # Ensure the index matches the time points
+        time_points = psth_df.index
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time_points, group_psth_mean, label=f'Group {signal_type} Mean')
+        plt.fill_between(time_points, group_psth_mean - group_psth_std, group_psth_mean + group_psth_std, color='gray', alpha=0.3, label='±1 SD')
+        plt.xlabel('Time (s)')
+        plt.ylabel(f'{signal_type}')
+        plt.title(f'Group PSTH for {behavior_name}')
+        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+        plt.legend()
+        plt.show()
+
+
+
+    '''********************************** PLOTTING **********************************'''
+    def plot_individual_psths(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='dFF'):
+        """
+        Plots the PSTH for each block individually.
+        """
+        rows = len(self.blocks)
+        figsize = (18, 5 * rows)
+
+        fig, axs = plt.subplots(rows, 1, figsize=figsize)
+        axs = axs.flatten()
+        plt.rcParams.update({'font.size': 16})
+
+        for i, (block_folder, tdt_data_obj) in enumerate(self.blocks.items()):
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+
+            # Extract the time axis (which should be the columns of the DataFrame)
+            time_axis = psth_df.index
+            
+            # Plot the mean PSTH with standard deviation shading
+            psth_mean = psth_df['mean'].values
+            psth_std = psth_df['std'].values
+            
+            axs[i].plot(time_axis, psth_mean, label=f'{tdt_data_obj.subject_name}', color='blue')
+            axs[i].fill_between(time_axis, psth_mean - psth_std, psth_mean + psth_std, color='blue', alpha=0.3)
+            
+            axs[i].set_title(f'{tdt_data_obj.subject_name}: {signal_type.capitalize()} Signal with {behavior_name} Bouts')
+            axs[i].set_ylabel(f'{signal_type}')
+            axs[i].set_xlabel('Time (s)')
+            axs[i].axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+            axs[i].legend()
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_individual_behavior(self, behavior_name='Pinch', plot_type='zscore', figsize=(18, 5)):
         """
         Plots the specified behavior and y-axis signal type for each processed block.
         
@@ -75,7 +169,8 @@ class GroupTDTData:
 
         # Loop over each block and plot
         for i, (block_folder, tdt_data_obj) in enumerate(self.blocks.items()):
-            tdt_data_obj.plot_behavior_event(behavior_name=behavior_name, plot_type=plot_type)
+            # Plot the behavior event using the plot_behavior_event method in the single block class
+            tdt_data_obj.plot_behavior_event(behavior_name=behavior_name, plot_type=plot_type, ax=axs[i])
             subject_name = tdt_data_obj.subject_name
             axs[i].set_title(f'{subject_name}: {plot_type.capitalize()} Signal with {behavior_name} Bouts', fontsize=18)
 
