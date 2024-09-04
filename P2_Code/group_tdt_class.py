@@ -97,20 +97,24 @@ class GroupTDTData:
 
         # Calculate the mean and standard deviation across blocks
         group_psth_mean = psth_mean_df.mean(axis=0)
-        group_psth_std = psth_std_df.mean(axis=0)  # You can also sum variances (std^2) and then take sqrt
+        group_psth_std = psth_std_df.mean(axis=0)
 
         # Ensure the index matches the time points
         time_points = psth_df.index
 
         plt.figure(figsize=(10, 6))
         plt.plot(time_points, group_psth_mean, label=f'Group {signal_type} Mean')
-        plt.fill_between(time_points, group_psth_mean - group_psth_std, group_psth_mean + group_psth_std, color='gray', alpha=0.3, label='±1 SD')
+        plt.fill_between(time_points, group_psth_mean - group_psth_std, group_psth_mean + group_psth_std, 
+                        color='gray', alpha=0.3, label='_nolegend_')  # Exclude from legend
         plt.xlabel('Time (s)')
         plt.ylabel(f'{signal_type}')
         plt.title(f'Group PSTH for {behavior_name}')
         plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+        # Set x-ticks at each second
+        plt.xticks(np.arange(int(time_points.min()), int(time_points.max())+1, 1))  # Ticks every second
         plt.legend()
         plt.show()
+
 
 
 
@@ -143,10 +147,14 @@ class GroupTDTData:
             axs[i].set_ylabel(f'{signal_type}')
             axs[i].set_xlabel('Time (s)')
             axs[i].axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+
+            # Set x-ticks at each second for this subplot
+            axs[i].set_xticks(np.arange(int(time_axis.min()), int(time_axis.max()) + 1, 1))
             axs[i].legend()
 
         plt.tight_layout()
         plt.show()
+
 
 
     def plot_individual_behavior(self, behavior_name='Pinch', plot_type='zscore', figsize=(18, 5)):
