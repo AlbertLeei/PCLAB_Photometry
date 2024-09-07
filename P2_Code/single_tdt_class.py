@@ -39,8 +39,9 @@ class TDTData:
         self.s2_events = None
         self.bout_dict = {}
         self.first_behavior_dict = {}
+        self.hab_dishab_metadata = {}
 
-    from hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout
+    from hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
 
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
@@ -317,58 +318,66 @@ class TDTData:
             # Call the helper function to extract and add the behavior events
             self.extract_single_behavior(behavior, behavior_df)
 
-    def combine_consecutive_behaviors(self, behavior_name, bout_time_threshold=2, min_occurrences=1):
+    def combine_consecutive_behaviors(self, behavior_name='all', bout_time_threshold=5, min_occurrences=1):
         """
         Combines consecutive behavior events if they occur within a specified time threshold.
-        
+
         Parameters:
-        - behavior_name (str): The name of the behavior to process.
+        - behavior_name (str): The name of the behavior to process. If 'all', process all behaviors.
         - bout_time_threshold (float): Maximum time gap (in seconds) between consecutive behaviors to be combined.
         - min_occurrences (int): Minimum number of occurrences required for a combined bout to be kept.
         """
-        behavior_event = behavior_name
-        behavior_onsets = np.array(self.behaviors[behavior_event].onset)
-        behavior_offsets = np.array(self.behaviors[behavior_event].offset)
+        
+        # Determine which behaviors to process
+        if behavior_name == 'all':
+            behaviors_to_process = self.behaviors.keys()  # Process all behaviors
+        else:
+            behaviors_to_process = [behavior_name]  # Process a single behavior
+        
+        for behavior_event in behaviors_to_process:
+            behavior_onsets = np.array(self.behaviors[behavior_event].onset)
+            behavior_offsets = np.array(self.behaviors[behavior_event].offset)
 
-        combined_onsets = []
-        combined_offsets = []
+            combined_onsets = []
+            combined_offsets = []
 
-        if len(behavior_onsets) == 0:
-            return
+            if len(behavior_onsets) == 0:
+                continue  # Skip this behavior if there are no onsets
 
-        start_idx = 0
+            start_idx = 0
 
-        while start_idx < len(behavior_onsets):
-            # Initialize the combination window with the first behavior onset and offset
-            current_onset = behavior_onsets[start_idx]
-            current_offset = behavior_offsets[start_idx]
+            while start_idx < len(behavior_onsets):
+                # Initialize the combination window with the first behavior onset and offset
+                current_onset = behavior_onsets[start_idx]
+                current_offset = behavior_offsets[start_idx]
 
-            next_idx = start_idx + 1
-            
-            # Check consecutive events and combine them if they fall within the threshold
-            while next_idx < len(behavior_onsets) and (behavior_onsets[next_idx] - current_offset) <= bout_time_threshold:
-                # Update the end of the combined bout
-                current_offset = behavior_offsets[next_idx]
-                print(f"Combining events at indices {start_idx} and {next_idx}")
-                next_idx += 1
+                next_idx = start_idx + 1
 
-            # Add the combined onset and offset to the list
-            combined_onsets.append(current_onset)
-            combined_offsets.append(current_offset)
+                # Check consecutive events and combine them if they fall within the threshold
+                while next_idx < len(behavior_onsets) and (behavior_onsets[next_idx] - current_offset) <= bout_time_threshold:
+                    # Update the end of the combined bout
+                    current_offset = behavior_offsets[next_idx]
+                    next_idx += 1
 
-            # Move to the next set of events
-            start_idx = next_idx
+                # Add the combined onset and offset to the list
+                combined_onsets.append(current_onset)
+                combined_offsets.append(current_offset)
 
-        # Filter out bouts with fewer than the minimum occurrences
-        valid_indices = []
-        for i in range(len(combined_onsets)):
-            num_occurrences = len([onset for onset in behavior_onsets if combined_onsets[i] <= onset <= combined_offsets[i]])
-            if num_occurrences >= min_occurrences:
-                valid_indices.append(i)
+                # Move to the next set of events
+                start_idx = next_idx
 
-        # Update the behavior with the combined onsets and offsets
-        self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
-        self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
+            # Filter out bouts with fewer than the minimum occurrences
+            valid_indices = []
+            for i in range(len(combined_onsets)):
+                num_occurrences = len([onset for onset in behavior_onsets if combined_onsets[i] <= onset <= combined_offsets[i]])
+                if num_occurrences >= min_occurrences:
+                    valid_indices.append(i)
+
+            # Update the behavior with the combined onsets and offsets
+            self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
+            self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
+
+
 
 
 

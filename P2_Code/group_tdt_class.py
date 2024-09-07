@@ -17,6 +17,11 @@ class GroupTDTData:
 
         self.load_blocks()
 
+        # Hab Dishab
+        self.hab_dishab_df = pd.DataFrame()
+    
+    from hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior
+
     def load_blocks(self):
         """
         Loads each block folder as a TDTData object.
@@ -41,7 +46,7 @@ class GroupTDTData:
         """
         return list(self.blocks.keys())
 
-    def batch_process(self, behavior_name='Pinch', remove_led_artifact=True, t=10):
+    def batch_process(self, remove_led_artifact=True, t=15):
         """
         Batch processes the TDT data by extracting behaviors, removing LED artifacts, and computing z-score.
         """
@@ -51,9 +56,11 @@ class GroupTDTData:
             if os.path.exists(csv_file_path):
                 print(f"Processing {block_folder}...")
                 tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
+                # tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=1, min_occurrences=1)
                 if remove_led_artifact:
                     tdt_data_obj.remove_initial_LED_artifact(t=t)
-                tdt_data_obj.smooth_signal()
+                # tdt_data_obj.smooth_signal()
+                tdt_data_obj.downsample_data(N=16)
                 tdt_data_obj.verify_signal()
                 tdt_data_obj.compute_dff()
                 tdt_data_obj.compute_zscore()
