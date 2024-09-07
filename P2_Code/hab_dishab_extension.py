@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import seaborn as sns
+import scipy.stats as stats
 
 
 '''********************************** FOR SINGLE OBJECT  **********************************'''
@@ -447,3 +449,58 @@ def hab_dishab_plot_individual_behavior(self, behavior_name='all', plot_type='zs
     plt.tight_layout()
     plt.show()
 
+def plot_investigation_vs_dff_all(group_data):
+    """
+    Plot investigation duration vs. mean Z-scored ΔF/F during 1st investigation for all blocks,
+    color-coded by individual mouse identity.
+    """
+    # Extracting relevant data for the correlation plot
+    investigation_durations = []
+    mean_zscored_dffs = []
+    mouse_ids = []
+    
+    # Assuming 'hab_dishab_df' contains a 'Mouse_ID' column for identification
+    for block_name, block_data in group_data.blocks.items():
+        block_df = block_data.hab_dishab_df
+        investigation_durations.extend(block_df['Investigation Time'].values)
+        mean_zscored_dffs.extend(block_df['Mean Z-scored dFF'].values)
+        mouse_ids.extend(block_df['Mouse_ID'].values)  # Add mouse IDs
+    
+    # Convert data to numpy arrays
+    investigation_durations = np.array(investigation_durations)
+    mean_zscored_dffs = np.array(mean_zscored_dffs)
+    mouse_ids = np.array(mouse_ids)
+    
+    # Calculate Pearson correlation
+    r, p = stats.pearsonr(mean_zscored_dffs, investigation_durations)
+    
+    # Create a color palette for each unique mouse
+    unique_mice = np.unique(mouse_ids)
+    palette = sns.color_palette("hsv", len(unique_mice))
+    color_map = {mouse: palette[i] for i, mouse in enumerate(unique_mice)}
+    
+    # Plotting the data
+    plt.figure(figsize=(8, 6))
+    
+    for mouse in unique_mice:
+        mask = mouse_ids == mouse
+        plt.scatter(mean_zscored_dffs[mask], investigation_durations[mask], color=color_map[mouse], label=mouse, alpha=0.6)
+    
+    # Adding regression line
+    slope, intercept = np.polyfit(mean_zscored_dffs, investigation_durations, 1)
+    plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
+    
+    # Add labels and legend
+    plt.xlabel('Mean Z-scored ΔF/F during 1st investigation')
+    plt.ylabel('Investigation duration (s)')
+    plt.title('Correlation between Investigation Duration and DA Response (All Blocks)')
+    
+    # Display Pearson correlation and p-value
+    plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
+             transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
+    
+    # Place the legend outside the plot
+    plt.legend(title='Mouse ID', bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    plt.tight_layout()
+    plt.show()
