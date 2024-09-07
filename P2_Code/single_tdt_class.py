@@ -8,10 +8,12 @@ import os
 from collections import OrderedDict
 
 
+
 class TDTData:
     def __init__(self, tdt_data, folder_path):
         self.streams = {}
-        self.behaviors = tdt_data.epocs  # renamed to behaviors
+        self.behaviors = {key: value for key, value in tdt_data.epocs.items() if key not in ['Cam1', 'Tick']}
+
 
         # Extract the subject name from the folder or file name
         self.subject_name = os.path.basename(folder_path).split('-')[0]
@@ -31,6 +33,14 @@ class TDTData:
         self.zscore = None
 
         self.psth_df = pd.DataFrame()
+
+        # Hab_Dishab
+        self.s1_events = None
+        self.s2_events = None
+        self.bout_dict = {}
+        self.first_behavior_dict = {}
+
+    from hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout
 
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
@@ -275,7 +285,7 @@ class TDTData:
             "name": event_name,
             "onset": onset_times,
             "offset": offset_times,
-            "type_str": self.behaviors.Cam1.type_str,  # Copy type_str from an existing epoc
+            "type_str": 'epocs',  # Copy type_str from an existing epoc
             "data": data_arr
         }
 
@@ -308,9 +318,17 @@ class TDTData:
             self.extract_single_behavior(behavior, behavior_df)
 
     def combine_consecutive_behaviors(self, behavior_name, bout_time_threshold=2, min_occurrences=1):
+        """
+        Combines consecutive behavior events if they occur within a specified time threshold.
+        
+        Parameters:
+        - behavior_name (str): The name of the behavior to process.
+        - bout_time_threshold (float): Maximum time gap (in seconds) between consecutive behaviors to be combined.
+        - min_occurrences (int): Minimum number of occurrences required for a combined bout to be kept.
+        """
         behavior_event = behavior_name
-        behavior_onsets = self.behaviors[behavior_event].onset
-        behavior_offsets = self.behaviors[behavior_event].offset
+        behavior_onsets = np.array(self.behaviors[behavior_event].onset)
+        behavior_offsets = np.array(self.behaviors[behavior_event].offset)
 
         combined_onsets = []
         combined_offsets = []
@@ -321,38 +339,37 @@ class TDTData:
         start_idx = 0
 
         while start_idx < len(behavior_onsets):
-            # Identify indices where the difference between consecutive onsets exceeds the threshold
-            bout_indices = np.where(np.diff(behavior_onsets[start_idx:]) >= bout_time_threshold)[0]
+            # Initialize the combination window with the first behavior onset and offset
+            current_onset = behavior_onsets[start_idx]
+            current_offset = behavior_offsets[start_idx]
 
-            if len(bout_indices) == 0:
-                # If no more indices found, combine the rest of the events
-                combined_onsets.append(behavior_onsets[start_idx])
-                combined_offsets.append(behavior_offsets[-1])
-                break
+            next_idx = start_idx + 1
+            
+            # Check consecutive events and combine them if they fall within the threshold
+            while next_idx < len(behavior_onsets) and (behavior_onsets[next_idx] - current_offset) <= bout_time_threshold:
+                # Update the end of the combined bout
+                current_offset = behavior_offsets[next_idx]
+                print(f"Combining events at indices {start_idx} and {next_idx}")
+                next_idx += 1
 
-            for idx in bout_indices:
-                if start_idx + idx < len(behavior_onsets):
-                    combined_onsets.append(behavior_onsets[start_idx])
-                    combined_offsets.append(behavior_offsets[start_idx + idx])
-                    start_idx += idx + 1
+            # Add the combined onset and offset to the list
+            combined_onsets.append(current_onset)
+            combined_offsets.append(current_offset)
 
-            # If we didn't process all onsets, add the last segment
-            if start_idx < len(behavior_onsets):
-                combined_onsets.append(behavior_onsets[start_idx])
-                combined_offsets.append(behavior_offsets[start_idx])
-
-            start_idx += 1
+            # Move to the next set of events
+            start_idx = next_idx
 
         # Filter out bouts with fewer than the minimum occurrences
         valid_indices = []
         for i in range(len(combined_onsets)):
-            num_occurrences = len([1 for onset in behavior_onsets if combined_onsets[i] <= onset <= combined_offsets[i]])
+            num_occurrences = len([onset for onset in behavior_onsets if combined_onsets[i] <= onset <= combined_offsets[i]])
             if num_occurrences >= min_occurrences:
                 valid_indices.append(i)
 
         # Update the behavior with the combined onsets and offsets
         self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
         self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
+
 
 
     '''********************************** PSTH **********************************'''
@@ -427,9 +444,9 @@ class TDTData:
         return result_df
 
 
-    def plot_psth(self, behavior_name, signal_type='dFF'):
+    def plot_psth(self, behavior_name, signal_type='zscore'):
         """
-        Plot the Peri-Stimulus Time Histogram (PSTH).
+        Plot the Peri-Stimulus Time Histogram (PSTH) using combined onsets.
 
         Parameters:
         psth_df (pd.DataFrame): DataFrame containing the PSTH data.
@@ -437,34 +454,41 @@ class TDTData:
         signal_type (str): Type of signal used for PSTH computation. Options are 'dFF' or 'zscore'.
         """
         if self.psth_df is None or self.psth_df.empty:
+            # Use combined onsets stored in self.behaviors
             self.compute_psth(behavior_name, pre_time=5, post_time=10, signal_type=signal_type)
 
         psth_df = self.psth_df
 
-        mean_psth = psth_df.mean(axis=0)
-        std_psth = psth_df.std(axis=0)
+        mean_psth = psth_df['mean']
+        std_psth = psth_df['std']
 
+        # Create the plot
         plt.figure(figsize=(10, 5))
-        plt.plot(psth_df.columns, mean_psth, label=f'{signal_type} Mean')
-        plt.fill_between(psth_df.columns, mean_psth - std_psth, mean_psth + std_psth, alpha=0.3)
+        plt.plot(psth_df.index, mean_psth, label=f'{signal_type} Mean')
+        plt.fill_between(psth_df.index, mean_psth - std_psth, mean_psth + std_psth, alpha=0.3)
 
+        # Add labels and title
         plt.xlabel('Time (s)')
         plt.ylabel(f'{signal_type}')
         plt.title(f'PSTH for {behavior_name}')
+
+        # Mark behavior onset
         plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
         plt.legend()
         plt.show()
 
+
     '''********************************** PLOTTING **********************************'''
-    def plot_behavior_event(self, behavior_name, plot_type='dFF', ax=None):
+    def plot_behavior_event(self, behavior_name, plot_type='zscore', ax=None):
         """
-        Plot Delta F/F (dFF) with behavior events. Can be used to plot in a given Axes object or individually.
+        Plot Delta F/F (dFF) or z-score with behavior events. Can be used to plot in a given Axes object or individually.
 
         Parameters:
         - behavior_name: The name of the behavior to plot. Use 'all' to plot all behaviors.
-        - plot_type: The type of plot. Options are 'dFF', 'zscore', or 'raw'.
+        - plot_type: The type of plot. Options are 'dFF' or 'zscore'.
         - ax: An optional matplotlib Axes object. If provided, the plot will be drawn on this Axes.
         """
+        # Prepare data based on plot type
         y_data = []
         if plot_type == 'dFF':
             if self.dFF is None:
@@ -478,42 +502,62 @@ class TDTData:
             y_data = self.zscore
             y_label = 'z-score'
             y_title = 'z-score Signal'
-        elif plot_type == 'raw':
-            y_data = self.streams[self.DA]
-            y_label = 'Raw Signal (mV)'
-            y_title = 'Raw Signal'
         else:
-            raise ValueError("Invalid plot_type. Choose from 'dFF', 'zscore', or 'raw'.")
+            raise ValueError("Invalid plot_type. Choose from 'dFF' or 'zscore'.")
 
+        # Create plot if no axis provided
         if ax is None:
             fig, ax = plt.subplots(figsize=(18, 6))
 
-        ax.plot(self.timestamps, np.array(y_data), linewidth=2, color='green', label=plot_type)
+        # Plot the signal in black
+        ax.plot(self.timestamps, np.array(y_data), linewidth=2, color='black', label=plot_type)
 
+        # Define specific colors for behaviors
+        behavior_colors = {'Investigation': 'dodgerblue', 'Approach': 'green', 'Defeat': 'red'}
+
+        # Track the behaviors we've already labeled for the legend
+        behavior_labels_plotted = set()
+
+        # Plot behavior spans
         if behavior_name == 'all':
             for behavior_event in self.behaviors.keys():
-                if behavior_event.endswith('_event'):
+                if behavior_event in behavior_colors:  # Make sure these are the behaviors you're interested in
                     behavior_onsets = self.behaviors[behavior_event].onset
                     behavior_offsets = self.behaviors[behavior_event].offset
+                    color = behavior_colors[behavior_event]
+                    
                     for on, off in zip(behavior_onsets, behavior_offsets):
-                        ax.axvspan(on, off, alpha=0.25, label=behavior_event, color=np.random.rand(3,))
+                        # Only add a label the first time we encounter a behavior type
+                        if behavior_event not in behavior_labels_plotted:
+                            ax.axvspan(on, off, alpha=0.25, label=behavior_event, color=color)
+                            behavior_labels_plotted.add(behavior_event)
+                        else:
+                            ax.axvspan(on, off, alpha=0.25, color=color)
         else:
+            # Plot a single behavior
             behavior_event = behavior_name
             if behavior_event not in self.behaviors.keys():
                 raise ValueError(f"Behavior event '{behavior_event}' not found in behaviors.")
             behavior_onsets = self.behaviors[behavior_event].onset
             behavior_offsets = self.behaviors[behavior_event].offset
+            color = behavior_colors.get(behavior_event, 'dodgerblue')  # Default to blue if behavior not in the color map
             for on, off in zip(behavior_onsets, behavior_offsets):
-                ax.axvspan(on, off, alpha=0.25, color='dodgerblue')
+                ax.axvspan(on, off, alpha=0.25, color=color)
 
+        # Add labels and title
         ax.set_ylabel(y_label)
         ax.set_xlabel('Seconds')
-        ax.set_title(f'{self.subject_name}: {y_title} with {behavior_name} Bouts' if behavior_name != 'all' else f'{self.subject_name}: {y_title} with All Behavior Events')
-        ax.legend()
+        ax.set_title(f'{self.subject_name}: {y_title} with {behavior_name.capitalize()} Bouts' if behavior_name != 'all' else f'{self.subject_name}: {y_title} with All Behavior Events')
+        
+        # Only display behaviors that were actually plotted
+        if len(behavior_labels_plotted) > 0:
+            ax.legend()
 
+        # Display the plot
         if ax is None:
             plt.tight_layout()
             plt.show()
+
 
     def plot(self, plot_type='zscore'):
         '''
@@ -537,7 +581,7 @@ class TDTData:
         elif plot_type == 'dFF':
             if self.dFF is not None:
                 plt.figure(figsize=(18, 6))
-                plt.plot(self.timestamps, self.dFF, label='dFF', color='green')
+                plt.plot(self.timestamps, self.dFF, label='dFF', color='black')  # Plot in black
                 plt.ylabel('ΔF/F')
                 plt.title(f'{self.subject_name}: Delta F/F (dFF) Signal')
                 plt.legend(loc='upper right')
@@ -548,7 +592,7 @@ class TDTData:
         elif plot_type == 'zscore':
             if self.zscore is not None and len(self.zscore) > 0:
                 plt.figure(figsize=(18, 6))
-                plt.plot(self.timestamps, self.zscore, linewidth=2, color='red', label='z-score')
+                plt.plot(self.timestamps, self.zscore, linewidth=2, color='black', label='z-score')  # Plot in black
                 plt.ylabel('z-score')
                 plt.title(f'{self.subject_name}: Z-score of Delta F/F (dFF) Signal')
                 plt.legend(loc='upper right')
