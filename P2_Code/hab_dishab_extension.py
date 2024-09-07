@@ -330,6 +330,7 @@ def hab_dishab_processing(self):
             tdt_data_obj.find_behavior_events_in_bout()  # Find behavior events within bouts
             tdt_data_obj.get_first_behavior()            # Get the first behavior in each bout
             tdt_data_obj.calculate_meta_data()           # Calculate metadata for each bout
+            name = tdt_data_obj.subject_name
 
             # Initialize variables to store total times and mean DA for this block
             total_investigation_time = 0
@@ -388,7 +389,7 @@ def hab_dishab_processing(self):
 
             # Create a row for this block (subject)
             row_data = {
-                "Subject": block_folder,
+                "Subject": name,
                 "Investigation Total Time": total_investigation_time,
                 "Approach Total Time": total_approach_time,
                 "First Investigation Mean DA": first_investigation_mean_DA,
@@ -449,48 +450,62 @@ def hab_dishab_plot_individual_behavior(self, behavior_name='all', plot_type='zs
     plt.tight_layout()
     plt.show()
 
-def plot_investigation_vs_dff_all(group_data):
+def plot_investigation_vs_dff_all(self):
     """
     Plot investigation duration vs. mean Z-scored ΔF/F during 1st investigation for all blocks,
-    color-coded by individual mouse identity.
+    color-coded by individual subject identity.
     """
-    # Extracting relevant data for the correlation plot
     investigation_durations = []
     mean_zscored_dffs = []
-    mouse_ids = []
+    subject_names = []
+
+    # Loop through each block in self.blocks
+    for block_name, block_data in self.blocks.items():
+        if block_data.first_behavior_dict:
+            for bout, behavior_data in block_data.first_behavior_dict.items():
+                if 'Investigation' in behavior_data:
+                    # Extract investigation duration and mean DA for this investigation
+                    investigation_durations.append(behavior_data['Investigation']['Total Duration'])
+                    mean_zscored_dffs.append(behavior_data['Investigation']['Mean zscore'])
+                    subject_names.append(block_name)  # Block name as the subject identifier
     
-    # Assuming 'hab_dishab_df' contains a 'Mouse_ID' column for identification
-    for block_name, block_data in group_data.blocks.items():
-        block_df = block_data.hab_dishab_df
-        investigation_durations.extend(block_df['Investigation Time'].values)
-        mean_zscored_dffs.extend(block_df['Mean Z-scored dFF'].values)
-        mouse_ids.extend(block_df['Mouse_ID'].values)  # Add mouse IDs
-    
-    # Convert data to numpy arrays
-    investigation_durations = np.array(investigation_durations)
-    mean_zscored_dffs = np.array(mean_zscored_dffs)
-    mouse_ids = np.array(mouse_ids)
-    
+    # Convert lists to numpy arrays
+    investigation_durations = np.array(investigation_durations, dtype=np.float64)
+    mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
+    subject_names = np.array(subject_names)
+
+    # Filter out any entries where either investigation_durations or mean_zscored_dffs is NaN
+    valid_indices = ~np.isnan(investigation_durations) & ~np.isnan(mean_zscored_dffs)
+    investigation_durations = investigation_durations[valid_indices]
+    mean_zscored_dffs = mean_zscored_dffs[valid_indices]
+    subject_names = subject_names[valid_indices]
+
+    if len(mean_zscored_dffs) == 0 or len(investigation_durations) == 0:
+        print("No valid data points for correlation.")
+        return
+
     # Calculate Pearson correlation
     r, p = stats.pearsonr(mean_zscored_dffs, investigation_durations)
+
+    # Get unique subjects and assign colors
+    unique_subjects = np.unique(subject_names)
+    color_palette = sns.color_palette("hsv", len(unique_subjects))
+    subject_color_map = {subject: color_palette[i] for i, subject in enumerate(unique_subjects)}
+
+    # Plotting the scatter plot
+    plt.figure(figsize=(12, 6))
     
-    # Create a color palette for each unique mouse
-    unique_mice = np.unique(mouse_ids)
-    palette = sns.color_palette("hsv", len(unique_mice))
-    color_map = {mouse: palette[i] for i, mouse in enumerate(unique_mice)}
-    
-    # Plotting the data
-    plt.figure(figsize=(8, 6))
-    
-    for mouse in unique_mice:
-        mask = mouse_ids == mouse
-        plt.scatter(mean_zscored_dffs[mask], investigation_durations[mask], color=color_map[mouse], label=mouse, alpha=0.6)
-    
-    # Adding regression line
+    for subject in unique_subjects:
+        # Create a mask for each subject
+        mask = subject_names == subject
+        plt.scatter(mean_zscored_dffs[mask], investigation_durations[mask], 
+                    color=subject_color_map[subject], label=subject, alpha=0.6)
+
+    # Adding the regression line
     slope, intercept = np.polyfit(mean_zscored_dffs, investigation_durations, 1)
     plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
-    
-    # Add labels and legend
+
+    # Add labels and title
     plt.xlabel('Mean Z-scored ΔF/F during 1st investigation')
     plt.ylabel('Investigation duration (s)')
     plt.title('Correlation between Investigation Duration and DA Response (All Blocks)')
@@ -498,9 +513,10 @@ def plot_investigation_vs_dff_all(group_data):
     # Display Pearson correlation and p-value
     plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
              transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
-    
-    # Place the legend outside the plot
-    plt.legend(title='Mouse ID', bbox_to_anchor=(1.05, 1), loc='upper left')
-    
+
+    # Add a legend with subject names
+    plt.legend(title='Subject', bbox_to_anchor=(1.05, 1), loc='upper left')
+
     plt.tight_layout()
     plt.show()
+

@@ -56,7 +56,7 @@ class GroupTDTData:
             if os.path.exists(csv_file_path):
                 print(f"Processing {block_folder}...")
                 tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
-                tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
+                # tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
                 if remove_led_artifact:
                     tdt_data_obj.remove_initial_LED_artifact(t=t)
                 # tdt_data_obj.smooth_signal()
