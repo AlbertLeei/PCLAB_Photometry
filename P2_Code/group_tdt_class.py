@@ -20,7 +20,8 @@ class GroupTDTData:
         # Hab Dishab
         self.hab_dishab_df = pd.DataFrame()
     
-    from hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior, plot_investigation_vs_dff_all
+    from P2_Code.hab_dishab.hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior, plot_investigation_vs_dff_all, plot_all_investigation_vs_dff_all,plot_investigation_mean_DA_boutwise, plot_investigation_durations_boutwise
+    # from P2_Code.social_pref. import 
 
     def load_blocks(self):
         """
@@ -63,7 +64,7 @@ class GroupTDTData:
                 tdt_data_obj.downsample_data(N=16)
                 tdt_data_obj.verify_signal()
                 tdt_data_obj.compute_dff()
-                tdt_data_obj.compute_zscore()
+                # tdt_data_obj.compute_zscore()
 
     def compute_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
         """

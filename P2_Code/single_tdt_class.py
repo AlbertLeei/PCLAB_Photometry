@@ -41,7 +41,7 @@ class TDTData:
         self.first_behavior_dict = {}
         self.hab_dishab_metadata = {}
 
-    from hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
+    from hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
 
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
@@ -118,21 +118,21 @@ class TDTData:
         keep_indices = np.ones_like(self.timestamps, dtype=bool)
         keep_indices[start_index:end_index+1] = False
         
-        # Update the streams by concatenating the parts of the signal that are kept
+        # Update the streams by applying the boolean mask
         for stream_name in ['DA', 'ISOS']:
             if stream_name in self.streams:
-                self.streams[stream_name] = self.streams[stream_name][keep_indices]
+                self.streams[stream_name] = np.array(self.streams[stream_name])[keep_indices]  # Apply the mask
         
-        # Update the timestamps by concatenating the kept timestamps
+        # Update the timestamps by applying the boolean mask
         self.timestamps = self.timestamps[keep_indices]
         
         # Clear dFF and zscore since the raw data has changed
         self.dFF = None
         self.zscore = None
-
-        # Verify the signal lengths
+        
+        # Verify the signal lengths to ensure consistency
         self.verify_signal()
-    
+
     def remove_initial_LED_artifact(self, t=10):
         '''
         This function removes the initial artifact caused by the onset of LEDs turning on.
