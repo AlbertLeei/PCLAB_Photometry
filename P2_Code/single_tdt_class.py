@@ -41,7 +41,7 @@ class TDTData:
         self.first_behavior_dict = {}
         self.hab_dishab_metadata = {}
 
-    from hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
+    from P2_Code.hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
 
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
