@@ -6,10 +6,14 @@ import scipy.signal as ss
 import tdt
 import os
 from collections import OrderedDict
+import sys
 
-
+root_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))  # Go up one directory to P2_Code
+# Add the root directory to sys.path
+sys.path.append(root_dir)
 
 class TDTData:
+
     def __init__(self, tdt_data, folder_path):
         self.streams = {}
         self.behaviors = {key: value for key, value in tdt_data.epocs.items() if key not in ['Cam1', 'Tick']}
@@ -41,8 +45,10 @@ class TDTData:
         self.first_behavior_dict = {}
         self.hab_dishab_metadata = {}
 
-    from P2_Code.hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
 
+
+    from P2_Code.hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
+    from P2_Code.home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout,hc_get_first_behavior, hc_calculate_meta_data
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
         """

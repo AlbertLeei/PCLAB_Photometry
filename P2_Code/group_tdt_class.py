@@ -3,7 +3,12 @@ import tdt
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from single_tdt_class import TDTData
+from single_tdt_class import *
+import sys
+
+# root_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))  # Go up one directory to P2_Code
+# # Add the root directory to sys.path
+# sys.path.append(root_dir)
 
 class GroupTDTData:
     def __init__(self, experiment_folder_path, csv_base_path):
@@ -22,7 +27,7 @@ class GroupTDTData:
     
     from P2_Code.hab_dishab.hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior, plot_investigation_vs_dff_all, plot_all_investigation_vs_dff_all,plot_investigation_mean_DA_boutwise, plot_investigation_durations_boutwise
     # from P2_Code.social_pref. import 
-    # from P2_Code.home_cage. import 
+    from P2_Code.home_cage.home_cage_extension import hc_processing
 
     def load_blocks(self):
         """
@@ -65,7 +70,7 @@ class GroupTDTData:
                 tdt_data_obj.downsample_data(N=16)
                 tdt_data_obj.verify_signal()
                 tdt_data_obj.compute_dff()
-                # tdt_data_obj.compute_zscore()
+                tdt_data_obj.compute_zscore()
 
     def compute_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
         """

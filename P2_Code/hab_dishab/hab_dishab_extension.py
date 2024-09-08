@@ -137,7 +137,8 @@ def extract_intruder_bouts(self, csv_base_path):
     # Now compute z-score with baseline being from initial artifact removal to the first s1 Introduced event
     if s1_events['introduced']:
         baseline_end_time = s1_events['introduced'][0]
-        self.compute_zscore(method='baseline', baseline_start=self.timestamps[0], baseline_end=baseline_end_time)
+        self.compute_zscore()
+        # self.compute_zscore(method='baseline', baseline_start=self.timestamps[0], baseline_end=baseline_end_time)
 
     # # Remove ITI times (Time between when a mouse is removed and then introduced)
     # for i in range(len(s1_events['removed']) - 1):
