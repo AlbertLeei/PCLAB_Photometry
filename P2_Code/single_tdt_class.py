@@ -45,10 +45,13 @@ class TDTData:
         self.first_behavior_dict = {}
         self.hab_dishab_metadata = {}
 
+        # hc
+        self.hc_metadata = {}
 
 
-    from P2_Code.hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
-    from P2_Code.home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout,hc_get_first_behavior, hc_calculate_meta_data
+
+    from hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
+    from home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
         """
@@ -626,3 +629,116 @@ class TDTData:
         # Remove the grid
         plt.grid(False)
         plt.show()
+
+
+    '''********************************** First Behavior **********************************'''
+    def get_first_behavior(self, behaviors=['Investigation']):
+        """
+        Extracts the first 'Investigation' behavior event from each bout and stores it in the class.
+        
+        Parameters:
+        - behaviors (list): List of behavior names to track (defaults to ['Investigation']).
+        
+        Populates:
+        - first_behavior_dict: Dictionary where each key is the bout name and the value contains the first behavior event details.
+        """
+        first_behavior_dict = {}
+
+        # Loop through each bout in the bout_dict
+        for bout_name, bout_data in self.bout_dict.items():
+            first_behavior_dict[bout_name] = {}  # Initialize the dictionary for this bout
+            
+            # Loop through the behaviors
+            for behavior in behaviors:
+                # Check if the behavior exists in bout_data and contains valid event data
+                if behavior in bout_data and isinstance(bout_data[behavior], list) and len(bout_data[behavior]) > 0:
+                    # Get the first event for the behavior
+                    first_event = bout_data[behavior][0]  # Assuming the list contains behavior events
+                    
+                    # Extract the relevant details
+                    first_behavior_dict[bout_name][behavior] = {
+                        'Start Time': first_event['Start Time'],
+                        'End Time': first_event['End Time'],
+                        'Total Duration': first_event['End Time'] - first_event['Start Time'],
+                        'Mean zscore': first_event.get('Mean zscore', None)
+                    }
+                else:
+                    # If the behavior doesn't exist in this bout, fill in with None
+                    first_behavior_dict[bout_name][behavior] = {
+                        'Start Time': None,
+                        'End Time': None,
+                        'Total Duration': None,
+                        'Mean zscore': None
+                    }
+
+        self.first_behavior_dict = first_behavior_dict
+
+
+    def compute_first_investigation_psth(self, behavior_name='Investigation', pre_time=5, post_time=5, signal_type='zscore'):
+            """
+            Computes the PSTH for only the first 'Investigation' in each bout.
+
+            Parameters:
+            behavior_name (str): Name of the behavior event to use for PSTH computation.
+            pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
+            post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
+            signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
+            """
+            if behavior_name not in self.first_behavior_dict.keys():
+                raise ValueError(f"Behavior '{behavior_name}' not found in first_behavior_dict.")
+            
+            first_investigation_onsets = [event['Start Time'] for bout, event in self.first_behavior_dict.items() if event[behavior_name]['Start Time'] is not None]
+
+            sampling_rate = self.fs
+
+            # Select the appropriate signal type
+            if signal_type == 'dFF':
+                if self.dFF is None:
+                    self.compute_dff()
+                signal = np.array(self.dFF)
+            elif signal_type == 'zscore':
+                if self.zscore is None:
+                    self.compute_zscore()
+                signal = np.array(self.zscore)
+            else:
+                raise ValueError("Invalid signal_type. Choose 'dFF' or 'zscore'.")
+
+            # Initialize PSTH data structure
+            n_samples_pre = int(pre_time * sampling_rate)
+            n_samples_post = int(post_time * sampling_rate)
+            psth_matrix = []
+
+            # Compute PSTH for each first investigation onset
+            for onset in first_investigation_onsets:
+                onset_idx = np.searchsorted(self.timestamps, onset)
+                start_idx = max(onset_idx - n_samples_pre, 0)
+                end_idx = min(onset_idx + n_samples_post, len(signal))
+
+                # Extract signal around the event
+                psth_segment = signal[start_idx:end_idx]
+
+                # Pad if necessary to ensure equal length
+                if len(psth_segment) < n_samples_pre + n_samples_post:
+                    padding = np.full((n_samples_pre + n_samples_post) - len(psth_segment), np.nan)
+                    psth_segment = np.concatenate([psth_segment, padding])
+
+                psth_matrix.append(psth_segment)
+
+            # Convert to DataFrame for ease of analysis
+            time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
+            psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
+
+            # Calculate the mean and standard deviation for each time point
+            psth_mean = psth_df.mean(axis=0)
+            psth_std = psth_df.std(axis=0)
+
+            # Return a DataFrame with both mean and std
+            result_df = pd.DataFrame({
+                'mean': psth_mean,
+                'std': psth_std
+            })
+
+            self.psth_df = result_df
+            print(result_df)
+            return result_df
+

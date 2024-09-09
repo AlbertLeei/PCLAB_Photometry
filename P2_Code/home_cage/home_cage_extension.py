@@ -230,100 +230,7 @@ def hc_find_behavior_events_in_bout(self):
     self.bout_dict = bout_dict
 
 
-def hc_get_first_behavior(self, behaviors=['Investigation', 'Approach']):
-    """
-    Extracts the mean z-score and other details for the first 'Investigation' and 'Approach' behavior events
-    from each bout in the bout_dict and stores the values in a new dictionary.
-
-    Parameters:
-    - behaviors (list): List of behavior events to track (defaults to ['Investigation', 'Approach']).
-
-    Returns:
-    - first_behavior_dict (dict): Dictionary containing the start time, end time, duration, 
-                                  and mean z-score for each behavior in each bout.
-    """
-    first_behavior_dict = {}
-
-    # Loop through each bout in the bout_dict
-    for bout_name, bout_data in self.bout_dict.items():
-        first_behavior_dict[bout_name] = {}  # Initialize the dictionary for this bout
-        
-        # Loop through each behavior we want to track
-        for behavior in behaviors:
-            # Check if behavior exists in bout_data and if it contains valid event data
-            if behavior in bout_data and isinstance(bout_data[behavior], list) and len(bout_data[behavior]) > 0:
-                # Access the first event for the behavior
-                first_event = bout_data[behavior][0]  # Assuming this is a list of events
-                
-                # Extract the relevant details for this behavior event
-                first_behavior_dict[bout_name][behavior] = {
-                    'Start Time': first_event['Start Time'],
-                    'End Time': first_event['End Time'],
-                    'Total Duration': first_event['End Time'] - first_event['Start Time'],
-                    'Mean zscore': first_event['Mean zscore']
-                }
-            else:
-                # If the behavior doesn't exist in this bout, add None placeholders
-                first_behavior_dict[bout_name][behavior] = {
-                    'Start Time': None,
-                    'End Time': None,
-                    'Total Duration': None,
-                    'Mean zscore': None
-                }
-
-    # Store the result in the class attribute
-    self.first_behavior_dict = first_behavior_dict
-
-
-def hc_calculate_meta_data(self):
-    """
-    Calculate the total amount of 'Investigation' and 'Approach' time for each bout.
-    This function will store the result in self.hc_metadata as a dictionary
-    with the total duration for each behavior per bout.
-
-    The structure of self.hc_metadata will be:
-    {
-        'bout_1': {
-            'Total Investigation Time': X seconds,
-            'Total Approach Time': Y seconds
-        },
-        'bout_2': {
-            'Total Investigation Time': Z seconds,
-            'Total Approach Time': W seconds
-        },
-        ...
-    }
-    """
-
-    # Initialize the metadata dictionary if it doesn't exist
-    self.hc_metadata = {}
-
-    # Loop through each bout in the bout_dict
-    for bout_name, bout_data in self.bout_dict.items():
-        # Initialize total times for this bout
-        total_investigation_time = 0
-        total_approach_time = 0
-
-        # Calculate total 'Investigation' time
-        if 'Investigation' in bout_data and isinstance(bout_data['Investigation'], list):
-            for event in bout_data['Investigation']:
-                start_time = event['Start Time']
-                end_time = event['End Time']
-                total_investigation_time += end_time - start_time  # Add duration to total
-
-        # Calculate total 'Approach' time
-        if 'Approach' in bout_data and isinstance(bout_data['Approach'], list):
-            for event in bout_data['Approach']:
-                start_time = event['Start Time']
-                end_time = event['End Time']
-                total_approach_time += end_time - start_time  # Add duration to total
-
-        # Store the total times in the metadata dictionary for this bout
-        self.hc_metadata[bout_name] = {
-            'Total Investigation Time': total_investigation_time,
-            'Total Approach Time': total_approach_time
-        }
-
+'''********************************** GROUP OBJECT **********************************'''
 
 def hc_processing(self):
     """
@@ -361,62 +268,12 @@ def hc_processing(self):
             tdt_data_obj.calculate_meta_data()           # Calculate metadata for each bout
             name = tdt_data_obj.subject_name
 
-            # Initialize variables to store total times and mean DA for this block
-            total_investigation_time = 0
-            total_approach_time = 0
+            tdt_data_obj.hc_extract_intruder_bouts(csv_file_path)
+            tdt_data_obj.hc_find_behavior_events_in_bout()
 
-            # Initialize dictionaries to store information by bout (s1, s2, etc.)
-            bout_investigation_times = {}
-            bout_approach_times = {}
-            bout_investigation_mean_DA = {}
-            bout_approach_mean_DA = {}
 
-            # Loop through the bouts to gather the information for each bout
-            for bout_key, behavior_dict in tdt_data_obj.bout_dict.items():
-                investigation_times = sum(event['End Time'] - event['Start Time'] for event in behavior_dict.get('Investigation', []))
-                approach_times = sum(event['End Time'] - event['Start Time'] for event in behavior_dict.get('Approach', []))
 
-                total_investigation_time += investigation_times
-                total_approach_time += approach_times
 
-                # Get mean DA from the first behavior dictionary, which was already processed
-                first_dict = tdt_data_obj.first_behavior_dict.get(bout_key, {})
-                mean_DA_investigation = first_dict.get('Investigation', {}).get('Mean zscore', None)
-                mean_DA_approach = first_dict.get('Approach', {}).get('Mean zscore', None)
 
-                # Store bout-specific data
-                bout_investigation_times[bout_key] = investigation_times
-                bout_approach_times[bout_key] = approach_times
-                bout_investigation_mean_DA[bout_key] = mean_DA_investigation
-                bout_approach_mean_DA[bout_key] = mean_DA_approach
 
-            # Get the first bout values for the first investigation and approach directly from first_behavior_dict
-            first_investigation_mean_DA = bout_investigation_mean_DA.get('Bout_s1', None)
-            first_approach_mean_DA = bout_approach_mean_DA.get('Bout_s1', None)
 
-            # Create a row for this block (subject)
-            row_data = {
-                "Subject": name,
-                "Investigation Total Time": total_investigation_time,
-                "Approach Total Time": total_approach_time,
-                "First Investigation Mean DA": first_investigation_mean_DA,
-                "First Approach Mean DA": first_approach_mean_DA
-            }
-
-            # Add bout-specific columns (e.g., s1, s2, etc.)
-            for bout_key in bout_investigation_times.keys():
-                row_data[f'{bout_key} Investigation Time'] = bout_investigation_times[bout_key]
-                row_data[f'{bout_key} Approach Time'] = bout_approach_times[bout_key]
-                row_data[f'{bout_key} First Investigation Mean DA'] = bout_investigation_mean_DA[bout_key]
-                row_data[f'{bout_key} First Approach Mean DA'] = bout_approach_mean_DA[bout_key]
-
-            # Append the row to the data rows list
-            data_rows.append(row_data)
-
-            print(f"Finished processing {block_folder}")
-
-    # Convert the list of data rows into a DataFrame
-    df = pd.DataFrame(data_rows)
-
-    # Store the resulting DataFrame as an attribute
-    self.hab_dishab_df = df

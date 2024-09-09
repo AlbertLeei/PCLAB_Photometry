@@ -693,6 +693,7 @@ def plot_investigation_durations_boutwise(self):
     # Loop through each block in self.blocks to dynamically build bout_investigation_duration_dict
     for block_name, block_data in self.blocks.items():
         if block_data.bout_dict:  # Ensure bout_dict is populated
+            # print(block_data.bout_dict.keys())
             for bout, behavior_data in block_data.bout_dict.items():
                 if 'Investigation' in behavior_data:
                     # Initialize a list for each bout if it doesn't exist
