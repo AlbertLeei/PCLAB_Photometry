@@ -6,6 +6,53 @@ import seaborn as sns
 import scipy.stats as stats
 
 
+# This shouldn't be in the hab_dishab extension code 
+def get_first_behavior(self, behaviors=['Investigation', 'Approach', 'Defeat', 'Aggression']):
+    """
+    Extracts the mean z-score and other details for the first 'Investigation' and 'Approach' behavior events
+    from each bout in the bout_dict and stores the values in a new dictionary.
+
+    Parameters:
+    - bout_dict (dict): Dictionary containing bout data with behavior events for each bout.
+    - behaviors (list): List of behavior events to track (defaults to ['Investigation', 'Approach']).
+
+    Returns:
+    - first_behavior_dict (dict): Dictionary containing the start time, end time, duration, 
+                                  and mean z-score for each behavior in each bout.
+    """
+    first_behavior_dict = {}
+
+    # Loop through each bout in the bout_dict
+    for bout_name, bout_data in self.bout_dict.items():
+        first_behavior_dict[bout_name] = {}  # Initialize the dictionary for this bout
+        
+        # Loop through each behavior we want to track
+        for behavior in behaviors:
+            # Check if behavior exists in bout_data and if it contains valid event data
+            if behavior in bout_data and isinstance(bout_data[behavior], list) and len(bout_data[behavior]) > 0:
+                # Access the first event for the behavior
+                first_event = bout_data[behavior][0]  # Assuming this is a list of events
+                
+                # Extract the relevant details for this behavior event
+                first_behavior_dict[bout_name][behavior] = {
+                    'Start Time': first_event['Start Time'],
+                    'End Time': first_event['End Time'],
+                    'Total Duration': first_event['End Time'] - first_event['Start Time'],
+                    'Mean zscore': first_event['Mean zscore']
+                }
+            else:
+                # If the behavior doesn't exist in this bout, add None placeholders
+                first_behavior_dict[bout_name][behavior] = {
+                    'Start Time': None,
+                    'End Time': None,
+                    'Total Duration': None,
+                    'Mean zscore': None
+                }
+
+
+    self.first_behavior_dict = first_behavior_dict
+
+
 '''********************************** FOR SINGLE OBJECT  **********************************'''
 def hab_dishab_plot_behavior_event(self, behavior_name='all', plot_type='dFF', ax=None):
     """
@@ -104,7 +151,8 @@ def hab_dishab_plot_behavior_event(self, behavior_name='all', plot_type='dFF', a
     if ax is None:
         plt.show()
 
-def extract_intruder_bouts(self, csv_base_path):
+
+def hab_dishab_extract_intruder_bouts(self, csv_base_path):
     """
     Extracts 's1 Introduced', 's1 Removed', 's2 Introduced', and 's2 Removed' events from a CSV file,
     and removes the ITI times (Inter-Trial Intervals) from the data using the remove_time function.
@@ -159,7 +207,7 @@ def extract_intruder_bouts(self, csv_base_path):
     # print("ITI times removed successfully.")
 
 
-def find_behavior_events_in_bout(self):
+def hab_dishab_find_behavior_events_in_bout(self):
     """
     Finds all behavior events within each bout defined by s1 and s2 introduced and removed. 
     For each event found, returns the start time, end time, total duration, and mean z-score during the event.
@@ -175,6 +223,7 @@ def find_behavior_events_in_bout(self):
     bout_dict = {}
 
     # Compute z-score if not already done
+    # self.zscore = None
     if self.zscore is None:
         self.compute_zscore()
 
@@ -217,130 +266,20 @@ def find_behavior_events_in_bout(self):
 
     # Iterate through each bout defined by s1 introduced and removed
     for i, (start_time, end_time) in enumerate(zip(self.s1_events['introduced'], self.s1_events['removed']), start=1):
-        bout_key = f'Bout_s1_{i}'
+        bout_key = f's1_{i}'
         process_bout(bout_key, start_time, end_time)
 
     for i, (start_time, end_time) in enumerate(zip(self.s2_events['introduced'], self.s2_events['removed']), start=1):
-            bout_key = f'Bout_s2_{i}'
+            bout_key = f's2_{i}'
             process_bout(bout_key, start_time, end_time)
         
-
+ 
     self.bout_dict = bout_dict
 
-def get_first_behavior(self, behaviors=['Investigation', 'Approach']):
-    """
-    Extracts the mean z-score and other details for the first 'Investigation' and 'Approach' behavior events
-    from each bout in the bout_dict and stores the values in a new dictionary.
-
-    Parameters:
-    - bout_dict (dict): Dictionary containing bout data with behavior events for each bout.
-    - behaviors (list): List of behavior events to track (defaults to ['Investigation', 'Approach']).
-
-    Returns:
-    - first_behavior_dict (dict): Dictionary containing the start time, end time, duration, 
-                                  and mean z-score for each behavior in each bout.
-    """
-    first_behavior_dict = {}
-
-    # Loop through each bout in the bout_dict
-    for bout_name, bout_data in self.bout_dict.items():
-        first_behavior_dict[bout_name] = {}  # Initialize the dictionary for this bout
-        
-        # Loop through each behavior we want to track
-        for behavior in behaviors:
-            # Check if behavior exists in bout_data and if it contains valid event data
-            if behavior in bout_data and isinstance(bout_data[behavior], list) and len(bout_data[behavior]) > 0:
-                # Access the first event for the behavior
-                first_event = bout_data[behavior][0]  # Assuming this is a list of events
-                
-                # Extract the relevant details for this behavior event
-                first_behavior_dict[bout_name][behavior] = {
-                    'Start Time': first_event['Start Time'],
-                    'End Time': first_event['End Time'],
-                    'Total Duration': first_event['End Time'] - first_event['Start Time'],
-                    'Mean zscore': first_event['Mean zscore']
-                }
-            else:
-                # If the behavior doesn't exist in this bout, add None placeholders
-                first_behavior_dict[bout_name][behavior] = {
-                    'Start Time': None,
-                    'End Time': None,
-                    'Total Duration': None,
-                    'Mean zscore': None
-                }
-
-
-    self.first_behavior_dict = first_behavior_dict
-
-
-def calculate_meta_data(self):
-    """
-    Calculate the total amount of 'Investigation' and 'Approach' time for each bout.
-    This function will store the result in self.hab_dishab_metadata as a dictionary
-    with the total duration for each behavior per bout.
-
-    The structure of self.hab_dishab_metadata will be:
-    {
-        'bout_1': {
-            'Total Investigation Time': X seconds,
-            'Total Approach Time': Y seconds
-        },
-        'bout_2': {
-            'Total Investigation Time': Z seconds,
-            'Total Approach Time': W seconds
-        },
-        ...
-    }
-    """
-
-    # Loop through each bout in the bout_dict
-    for bout_name, bout_data in self.bout_dict.items():
-        # Initialize total times for this bout
-        total_investigation_time = 0
-        total_approach_time = 0
-
-        # Calculate total 'Investigation' time
-        if 'Investigation' in bout_data and isinstance(bout_data['Investigation'], list):
-            for event in bout_data['Investigation']:
-                start_time = event['Start Time']
-                end_time = event['End Time']
-                total_investigation_time += end_time - start_time  # Add duration to total
-
-        # Calculate total 'Approach' time
-        if 'Approach' in bout_data and isinstance(bout_data['Approach'], list):
-            for event in bout_data['Approach']:
-                start_time = event['Start Time']
-                end_time = event['End Time']
-                total_approach_time += end_time - start_time  # Add duration to total
-
-        # Store the total times in the metadata dictionary for this bout
-        self.hab_dishab_metadata[bout_name] = {
-            'Total Investigation Time': total_investigation_time,
-            'Total Approach Time': total_approach_time
-        }
 
 
 '''********************************** FOR GROUP CLASS  **********************************'''
 def hab_dishab_processing(self):
-    """
-    Processes each block for the habituation-dishabituation experiment by finding behavior events,
-    getting the first behavior, and calculating metadata for each block.
-
-    For each bout (e.g., s1, s2), it extracts investigation and approach times as well as mean DA 
-    (dFF or z-score) for investigation and approach, storing them in a group-based DataFrame.
-    
-    The DataFrame has the following columns:
-    - Subject: Block name
-    - Investigation Total Time: Total investigation time for each subject
-    - Approach Total Time: Total approach time for each subject
-    - First Investigation Mean DA: Mean DA for the first investigation bout
-    - First Approach Mean DA: Mean DA for the first approach bout
-    - s1 Investigation Time, s2 Investigation Time, ... : Investigation time for each bout
-    - s1 Approach Time, s2 Approach Time, ... : Approach time for each bout
-    - s1 Investigation Mean DA, s2 Investigation Mean DA, ... : Mean DA for investigation for each bout
-    - s1 Approach Mean DA, s2 Approach Mean DA, ... : Mean DA for approach for each bout
-    """
-    # Initialize a list to hold the data
     data_rows = []
 
     for block_folder, tdt_data_obj in self.blocks.items():
@@ -351,93 +290,13 @@ def hab_dishab_processing(self):
             print(f"Processing {block_folder}...")
 
             # Call the three functions in sequence using the CSV file path
-            tdt_data_obj.extract_intruder_bouts(csv_file_path)
-            tdt_data_obj.find_behavior_events_in_bout()  # Find behavior events within bouts
+            tdt_data_obj.smooth_signal()
+            tdt_data_obj.hab_dishab_extract_intruder_bouts(csv_file_path)
+            tdt_data_obj.hab_dishab_find_behavior_events_in_bout()
             tdt_data_obj.get_first_behavior()            # Get the first behavior in each bout
-            tdt_data_obj.calculate_meta_data()           # Calculate metadata for each bout
-            name = tdt_data_obj.subject_name
+            # tdt_data_obj.calculate_meta_data()           # Calculate metadata for each bout
 
-            # Initialize variables to store total times and mean DA for this block
-            total_investigation_time = 0
-            total_approach_time = 0
-            first_investigation_mean_DA = None
-            first_approach_mean_DA = None
 
-            # Initialize dictionaries to store information by bout (s1, s2, etc.)
-            bout_investigation_times = {}
-            bout_approach_times = {}
-            bout_investigation_mean_DA = {}
-            bout_approach_mean_DA = {}
-
-            # Loop through the bouts to gather the information for each bout
-            for bout_key, behavior_dict in tdt_data_obj.bout_dict.items():
-                investigation_times = 0
-                approach_times = 0
-                mean_DA_investigation = 0
-                mean_DA_approach = 0
-
-                # Process Investigation events within the bout
-                if 'Investigation' in behavior_dict:
-                    for event in behavior_dict['Investigation']:
-                        investigation_times += event['End Time'] - event['Start Time']
-                    total_investigation_time += investigation_times
-
-                # Process Approach events within the bout
-                if 'Approach' in behavior_dict:
-                    for event in behavior_dict['Approach']:
-                        approach_times += event['End Time'] - event['Start Time']
-                    total_approach_time += approach_times
-
-                # Process mean DA values from the first behavior dict
-                if bout_key in tdt_data_obj.first_behavior_dict:
-                    first_dict = tdt_data_obj.first_behavior_dict[bout_key]
-
-                    # Mean DA during Investigation
-                    if 'Investigation' in first_dict and first_dict['Investigation']['Mean zscore'] is not None:
-                        mean_DA_investigation = first_dict['Investigation']['Mean zscore']
-
-                    # Mean DA during Approach
-                    if 'Approach' in first_dict and first_dict['Approach']['Mean zscore'] is not None:
-                        mean_DA_approach = first_dict['Approach']['Mean zscore']
-
-                # Store bout-specific data
-                bout_investigation_times[bout_key] = investigation_times
-                bout_approach_times[bout_key] = approach_times
-                bout_investigation_mean_DA[bout_key] = mean_DA_investigation
-                bout_approach_mean_DA[bout_key] = mean_DA_approach
-
-            # Get the first bout values for the first investigation and approach
-            if 'Bout_s1' in bout_investigation_mean_DA:
-                first_investigation_mean_DA = bout_investigation_mean_DA['Bout_s1']
-            if 'Bout_s1' in bout_approach_mean_DA:
-                first_approach_mean_DA = bout_approach_mean_DA['Bout_s1']
-
-            # Create a row for this block (subject)
-            row_data = {
-                "Subject": name,
-                "Investigation Total Time": total_investigation_time,
-                "Approach Total Time": total_approach_time,
-                "First Investigation Mean DA": first_investigation_mean_DA,
-                "First Approach Mean DA": first_approach_mean_DA
-            }
-
-            # Add bout-specific columns (e.g., s1, s2, etc.)
-            for bout_key in bout_investigation_times.keys():
-                row_data[f'{bout_key} Investigation Time'] = bout_investigation_times[bout_key]
-                row_data[f'{bout_key} Approach Time'] = bout_approach_times[bout_key]
-                row_data[f'{bout_key} First Investigation Mean DA'] = bout_investigation_mean_DA[bout_key]
-                row_data[f'{bout_key} First Approach Mean DA'] = bout_approach_mean_DA[bout_key]
-
-            # Append the row to the data rows list
-            data_rows.append(row_data)
-
-            print(f"Finished processing {block_folder}")
-
-    # Convert the list of data rows into a DataFrame
-    df = pd.DataFrame(data_rows)
-
-    # Store the resulting DataFrame as an attribute
-    self.hab_dishab_df = df
 
 
 def hab_dishab_plot_individual_behavior(self, behavior_name='all', plot_type='zscore', figsize=(18, 5)):
@@ -473,274 +332,4 @@ def hab_dishab_plot_individual_behavior(self, behavior_name='all', plot_type='zs
         axs[i].set_title(f'{subject_name}: {plot_type.capitalize()} Signal with {behavior_name.capitalize()} Bouts' if behavior_name != 'all' else f'{subject_name}: {plot_type.capitalize()} Signal with All Bouts', fontsize=18)
 
     plt.tight_layout()
-    plt.show()
-
-def plot_investigation_vs_dff_all(self):
-    """
-    Plot investigation duration vs. mean Z-scored ΔF/F during 1st investigation for all blocks,
-    color-coded by individual subject identity.
-    """
-    investigation_durations = []
-    mean_zscored_dffs = []
-    subject_names = []
-
-    # Loop through each block in self.blocks
-    for block_name, block_data in self.blocks.items():
-        if block_data.first_behavior_dict:
-            for bout, behavior_data in block_data.first_behavior_dict.items():
-                if 'Investigation' in behavior_data:
-                    # Extract investigation duration and mean DA for this investigation
-                    investigation_durations.append(behavior_data['Investigation']['Total Duration'])
-                    mean_zscored_dffs.append(behavior_data['Investigation']['Mean zscore'])
-                    subject_names.append(block_name)  # Block name as the subject identifier
-    
-    # Convert lists to numpy arrays
-    investigation_durations = np.array(investigation_durations, dtype=np.float64)
-    mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
-    subject_names = np.array(subject_names)
-
-    # Filter out any entries where either investigation_durations or mean_zscored_dffs is NaN
-    valid_indices = ~np.isnan(investigation_durations) & ~np.isnan(mean_zscored_dffs)
-    investigation_durations = investigation_durations[valid_indices]
-    mean_zscored_dffs = mean_zscored_dffs[valid_indices]
-    subject_names = subject_names[valid_indices]
-
-    if len(mean_zscored_dffs) == 0 or len(investigation_durations) == 0:
-        print("No valid data points for correlation.")
-        return
-
-    # Calculate Pearson correlation
-    r, p = stats.pearsonr(mean_zscored_dffs, investigation_durations)
-
-    # Get unique subjects and assign colors
-    unique_subjects = np.unique(subject_names)
-    color_palette = sns.color_palette("hsv", len(unique_subjects))
-    subject_color_map = {subject: color_palette[i] for i, subject in enumerate(unique_subjects)}
-
-    # Plotting the scatter plot
-    plt.figure(figsize=(12, 6))
-    
-    for subject in unique_subjects:
-        # Create a mask for each subject
-        mask = subject_names == subject
-        plt.scatter(mean_zscored_dffs[mask], investigation_durations[mask], 
-                    color=subject_color_map[subject], label=subject, alpha=0.6)
-
-    # Adding the regression line
-    slope, intercept = np.polyfit(mean_zscored_dffs, investigation_durations, 1)
-    plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
-
-    # Add labels and title
-    plt.xlabel('Mean Z-scored ΔF/F during 1st investigation')
-    plt.ylabel('Investigation duration (s)')
-    plt.title('Correlation between Investigation Duration and DA Response (All Blocks)')
-    
-    # Display Pearson correlation and p-value
-    plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
-             transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
-
-    # Add a legend with subject names
-    plt.legend(title='Subject', bbox_to_anchor=(1.05, 1), loc='upper left')
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-def plot_all_investigation_vs_dff_all(self):
-    """
-    Plot investigation duration vs. mean Z-scored ΔF/F during all investigations for all blocks,
-    color-coded by individual subject identity.
-    """
-    investigation_durations = []
-    mean_zscored_dffs = []
-    subject_names = []
-
-    # Loop through each block in self.blocks
-    for block_name, block_data in self.blocks.items():
-        if block_data.bout_dict:  # Make sure bout_dict is populated
-            for bout, behavior_data in block_data.bout_dict.items():
-                if 'Investigation' in behavior_data:
-                    # Loop through all investigation events in this bout
-                    for event in behavior_data['Investigation']:
-                        # Extract investigation duration and mean DA for this investigation
-                        investigation_durations.append(event['Total Duration'])
-                        mean_zscored_dffs.append(event['Mean zscore'])
-                        subject_names.append(block_name)  # Block name as the subject identifier
-    
-    # Convert lists to numpy arrays
-    investigation_durations = np.array(investigation_durations, dtype=np.float64)
-    mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
-    subject_names = np.array(subject_names)
-
-    # Filter out any entries where either investigation_durations or mean_zscored_dffs is NaN
-    valid_indices = ~np.isnan(investigation_durations) & ~np.isnan(mean_zscored_dffs)
-    investigation_durations = investigation_durations[valid_indices]
-    mean_zscored_dffs = mean_zscored_dffs[valid_indices]
-    subject_names = subject_names[valid_indices]
-
-    if len(mean_zscored_dffs) == 0 or len(investigation_durations) == 0:
-        print("No valid data points for correlation.")
-        return
-
-    # Calculate Pearson correlation
-    r, p = stats.pearsonr(mean_zscored_dffs, investigation_durations)
-
-    # Get unique subjects and assign colors
-    unique_subjects = np.unique(subject_names)
-    color_palette = sns.color_palette("hsv", len(unique_subjects))
-    subject_color_map = {subject: color_palette[i] for i, subject in enumerate(unique_subjects)}
-
-    # Plotting the scatter plot
-    plt.figure(figsize=(12, 6))
-    
-    for subject in unique_subjects:
-        # Create a mask for each subject
-        mask = subject_names == subject
-        plt.scatter(mean_zscored_dffs[mask], investigation_durations[mask], 
-                    color=subject_color_map[subject], label=subject, alpha=0.6)
-
-    # Adding the regression line
-    slope, intercept = np.polyfit(mean_zscored_dffs, investigation_durations, 1)
-    plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
-
-    # Add labels and title
-    plt.xlabel('Mean Z-scored ΔF/F during investigations')
-    plt.ylabel('Investigation duration (s)')
-    plt.title('Correlation between Investigation Duration and DA Response (All Investigations)')
-
-    # Display Pearson correlation and p-value
-    plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
-             transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
-
-    # Add a legend with subject names
-    plt.legend(title='Subject', bbox_to_anchor=(1.05, 1), loc='upper left')
-
-    plt.tight_layout()
-    plt.show()
-
-def plot_investigation_mean_DA_boutwise(self):
-    """
-    Plot the mean Z-scored ΔF/F (mean DA) for all investigation events during each bout.
-    The bar graph will show the mean ± SEM across all subjects, with individual subject data points.
-    """
-    # Initialize a dictionary to collect the mean DA values for each bout (use block_data.bout_dict keys dynamically)
-    bout_mean_DA_dict = {}
-
-    # Loop through each block in self.blocks to dynamically build bout_mean_DA_dict
-    for block_name, block_data in self.blocks.items():
-        if block_data.bout_dict:  # Ensure bout_dict is populated
-            for bout, behavior_data in block_data.bout_dict.items():
-                if 'Investigation' in behavior_data:
-                    # Initialize a list for each bout if it doesn't exist
-                    if bout not in bout_mean_DA_dict:
-                        bout_mean_DA_dict[bout] = []
-                    # For each bout, collect the mean z-score (mean DA) for all investigation events
-                    for event in behavior_data['Investigation']:
-                        bout_mean_DA_dict[bout].append(event['Mean zscore'])
-
-    # Prepare lists to store the mean and SEM for each bout
-    bouts = list(bout_mean_DA_dict.keys())  # Dynamically get the bout names
-    mean_DA_per_bout = []
-    sem_DA_per_bout = []
-
-    # Calculate the mean and SEM for each bout
-    for bout in bouts:
-        mean_DA_values = bout_mean_DA_dict[bout]
-        if mean_DA_values:  # If there are any values for the bout
-            mean_DA_per_bout.append(np.nanmean(mean_DA_values))
-            sem_DA_per_bout.append(np.nanstd(mean_DA_values) / np.sqrt(len(mean_DA_values)))
-        else:
-            mean_DA_per_bout.append(np.nan)  # If no data for this bout, append NaN
-            sem_DA_per_bout.append(np.nan)
-
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(16, 6))
-
-    # Plot the bar plot with error bars
-    bars = ax.bar(bouts, mean_DA_per_bout, yerr=sem_DA_per_bout, capsize=5, color='skyblue', edgecolor='black', label='Mean')
-
-    # Plot each individual's mean DA values for each bout as scatter points
-    for i, bout in enumerate(bouts):
-        mean_DA_values = bout_mean_DA_dict[bout]
-        for subject_data in mean_DA_values:
-            ax.scatter(bout, subject_data, color='black', alpha=0.7)  # Plot individual points for each bout
-
-    # Add labels, title, and format
-    ax.set_ylabel('Mean DA (z-score)', fontsize=12)
-    ax.set_xlabel('Bouts', fontsize=12)
-    ax.set_title('Mean DA (Z-scored ΔF/F) During Investigation Across Bouts', fontsize=14)
-
-    # Set x-ticks to match the dynamically captured bout labels
-    ax.set_xticks(np.arange(len(bouts)))
-    ax.set_xticklabels(bouts, fontsize=12)
-
-    # Add the legend outside the plot
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), title="Subjects")
-
-    # Display the plot
-    plt.show()
-
-
-def plot_investigation_durations_boutwise(self):
-    """
-    Plot the total investigation duration for all investigation events during each bout.
-    The bar graph will show the mean ± SEM across all subjects, with individual subject data points.
-    """
-    # Initialize a dictionary to collect the investigation durations for each bout
-    bout_investigation_duration_dict = {}
-
-    # Loop through each block in self.blocks to dynamically build bout_investigation_duration_dict
-    for block_name, block_data in self.blocks.items():
-        if block_data.bout_dict:  # Ensure bout_dict is populated
-            # print(block_data.bout_dict.keys())
-            for bout, behavior_data in block_data.bout_dict.items():
-                if 'Investigation' in behavior_data:
-                    # Initialize a list for each bout if it doesn't exist
-                    if bout not in bout_investigation_duration_dict:
-                        bout_investigation_duration_dict[bout] = []
-                    # For each bout, collect the investigation duration for all investigation events
-                    for event in behavior_data['Investigation']:
-                        bout_investigation_duration_dict[bout].append(event['Total Duration'])
-
-    # Prepare lists to store the mean and SEM for each bout
-    bouts = list(bout_investigation_duration_dict.keys())  # Dynamically get the bout names
-    mean_investigation_duration_per_bout = []
-    sem_investigation_duration_per_bout = []
-
-    # Calculate the mean and SEM for each bout
-    for bout in bouts:
-        investigation_duration_values = bout_investigation_duration_dict[bout]
-        if investigation_duration_values:  # If there are any values for the bout
-            mean_investigation_duration_per_bout.append(np.nanmean(investigation_duration_values))
-            sem_investigation_duration_per_bout.append(np.nanstd(investigation_duration_values) / np.sqrt(len(investigation_duration_values)))
-        else:
-            mean_investigation_duration_per_bout.append(np.nan)  # If no data for this bout, append NaN
-            sem_investigation_duration_per_bout.append(np.nan)
-
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(16, 6))
-
-    # Plot the bar plot with error bars
-    bars = ax.bar(bouts, mean_investigation_duration_per_bout, yerr=sem_investigation_duration_per_bout, capsize=5, color='skyblue', edgecolor='black', label='Mean')
-
-    # Plot each individual's investigation durations for each bout as scatter points
-    for i, bout in enumerate(bouts):
-        investigation_duration_values = bout_investigation_duration_dict[bout]
-        for subject_data in investigation_duration_values:
-            ax.scatter(bout, subject_data, color='black', alpha=0.7)  # Plot individual points for each bout
-
-    # Add labels, title, and format
-    ax.set_ylabel('Investigation Duration (s)', fontsize=12)
-    ax.set_xlabel('Bouts', fontsize=12)
-    ax.set_title('Investigation Duration During Investigation Across Bouts', fontsize=14)
-
-    # Set x-ticks to match the dynamically captured bout labels
-    ax.set_xticks(np.arange(len(bouts)))
-    ax.set_xticklabels(bouts, fontsize=12)
-
-    # Add the legend outside the plot
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), title="Subjects")
-
-    # Display the plot
     plt.show()

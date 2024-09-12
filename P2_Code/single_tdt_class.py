@@ -38,19 +38,19 @@ class TDTData:
 
         self.psth_df = pd.DataFrame()
 
-        # Hab_Dishab
+        # Extra Experiments
         self.s1_events = None
         self.s2_events = None
         self.bout_dict = {}
         self.first_behavior_dict = {}
-        self.hab_dishab_metadata = {}
+        # self.hab_dishab_metadata = {}
 
         # hc
-        self.hc_metadata = {}
+        # self.hc_metadata = {}
 
 
 
-    from hab_dishab.hab_dishab_extension import extract_intruder_bouts, hab_dishab_plot_behavior_event, find_behavior_events_in_bout, get_first_behavior, calculate_meta_data
+    from hab_dishab.hab_dishab_extension import hab_dishab_plot_behavior_event, hab_dishab_extract_intruder_bouts, hab_dishab_find_behavior_events_in_bout 
     from home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout
     '''********************************** PRINTING INFO **********************************'''
     def print_behaviors(self):
@@ -65,7 +65,7 @@ class TDTData:
                 print(behavior_name)
 
     '''********************************** FILTERING **********************************'''
-    def smooth_signal(self, filter_window=101, filter_type='moving_average'):
+    def smooth_signal(self, filter_window=100, filter_type='moving_average'):
         '''
         Smooths the signal using a specified filter type.
 
@@ -178,7 +178,7 @@ class TDTData:
 
 
     '''********************************** DFF AND ZSCORE **********************************'''
-    def execute_controlFit_dff(self, control, signal, filter_window=101):
+    def execute_controlFit_dff(self, control, signal, filter_window=100):
         """
         Fits the control channel to the signal channel and calculates delta F/F (dFF).
 
@@ -208,7 +208,7 @@ class TDTData:
 
         return norm_data, control_fit
 
-    def compute_dff(self, filter_window=101):
+    def compute_dff(self, filter_window=100):
         """
         Computes the delta F/F (dFF) signal by fitting the isosbestic control signal to the signal of interest.
         
