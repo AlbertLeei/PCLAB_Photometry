@@ -750,3 +750,366 @@ def plot_investigation_durations_boutwise(self):
 
     # Display the plot
     plt.show()
+
+
+#Old PSTH CODE
+
+    def compute_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
+        """
+        Computes the group-level PSTH for the specified behavior and stores it in self.group_psth.
+        """
+        psths = []
+        for block_folder, tdt_data_obj in self.blocks.items():
+            # Compute individual PSTH
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+            psths.append(psth_df.mean(axis=0).values)
+
+        # Ensure all PSTHs have the same length by trimming or padding
+        min_length = min(len(psth) for psth in psths)
+        trimmed_psths = [psth[:min_length] for psth in psths]
+
+        # Convert list of arrays to a DataFrame
+        self.group_psth = pd.DataFrame(trimmed_psths).mean(axis=0)
+        self.group_psth.index = psth_df.columns[:min_length]
+
+    def plot_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
+        """
+        Plots the group-level PSTH for the specified behavior, including the variance (standard deviation) between trials.
+        """
+        if self.group_psth is None:
+            raise ValueError("Group PSTH has not been computed. Call compute_group_psth first.")
+
+        psths_mean = []
+        psths_std = []
+        for block_folder, tdt_data_obj in self.blocks.items():
+            # Compute individual PSTH
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+            psths_mean.append(psth_df['mean'].values)
+            psths_std.append(psth_df['std'].values)
+
+        # Convert list of arrays to DataFrames
+        psth_mean_df = pd.DataFrame(psths_mean)
+        psth_std_df = pd.DataFrame(psths_std)
+
+        # Calculate the mean and standard deviation across blocks
+        group_psth_mean = psth_mean_df.mean(axis=0)
+        group_psth_std = psth_std_df.mean(axis=0)
+
+        # Ensure the index matches the time points
+        time_points = psth_df.index
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time_points, group_psth_mean, label=f'Group {signal_type} Mean')
+        plt.fill_between(time_points, group_psth_mean - group_psth_std, group_psth_mean + group_psth_std, 
+                        color='gray', alpha=0.3, label='_nolegend_')  # Exclude from legend
+        plt.xlabel('Time (s)')
+        plt.ylabel(f'{signal_type}')
+        plt.title(f'Group PSTH for {behavior_name}')
+        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+        # Set x-ticks at each second
+        plt.xticks(np.arange(int(time_points.min()), int(time_points.max())+1, 1))  # Ticks every second
+        plt.legend()
+        plt.show()
+
+    def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
+        """
+        Plots the individual PSTHs for each block for the specified behavior.
+
+        Parameters:
+        behavior_name (str): The name of the behavior to plot.
+        pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
+        post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
+        signal_type (str): The type of signal to use for PSTH computation. Options are 'zscore' or 'dFF'.
+        """
+        plt.figure(figsize=(10, 6))
+
+        # Iterate through each block and plot its PSTH
+        for block_folder, tdt_data_obj in self.blocks.items():
+            # Compute individual PSTH
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+            
+            # Plot the individual trace
+            time_points = psth_df.index
+            plt.plot(time_points, psth_df['mean'].values, label=f'{block_folder}', alpha=0.6)
+
+        plt.xlabel('Time (s)')
+        plt.ylabel(f'{signal_type}')
+        plt.title(f'Individual PSTHs for {behavior_name}')
+        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+
+        # Set x-ticks at each second
+        plt.xticks(np.arange(int(time_points.min()), int(time_points.max())+1, 1))  # Ticks every second
+        
+        # Add a legend outside the plot showing each block trace
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_individual_psths(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='dFF'):
+        """
+        Plots the PSTH for each block individually.
+        """
+        rows = len(self.blocks)
+        figsize = (18, 5 * rows)
+
+        fig, axs = plt.subplots(rows, 1, figsize=figsize)
+        axs = axs.flatten()
+        plt.rcParams.update({'font.size': 16})
+
+        for i, (block_folder, tdt_data_obj) in enumerate(self.blocks.items()):
+            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+
+            # Extract the time axis (which should be the columns of the DataFrame)
+            time_axis = psth_df.index
+            
+            # Plot the mean PSTH with standard deviation shading
+            psth_mean = psth_df['mean'].values
+            psth_std = psth_df['std'].values
+            
+            axs[i].plot(time_axis, psth_mean, label=f'{tdt_data_obj.subject_name}', color='blue')
+            axs[i].fill_between(time_axis, psth_mean - psth_std, psth_mean + psth_std, color='blue', alpha=0.3)
+            
+            axs[i].set_title(f'{tdt_data_obj.subject_name}: {signal_type.capitalize()} Signal with {behavior_name} Bouts')
+            axs[i].set_ylabel(f'{signal_type}')
+            axs[i].set_xlabel('Time (s)')
+            axs[i].axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+
+            # Set x-ticks at each second for this subplot
+            axs[i].set_xticks(np.arange(int(time_axis.min()), int(time_axis.max()) + 1, 1))
+            axs[i].legend()
+
+        plt.tight_layout()
+        plt.show()
+
+
+# Single object PSTH
+    '''********************************** PSTH **********************************'''
+    def compute_psth(self, behavior_name, pre_time=5, post_time=10, signal_type='dFF'):
+        """
+        Compute the Peri-Stimulus Time Histogram (PSTH) for a given behavior.
+
+        Parameters:
+        behavior_name (str): The name of the behavior event to use for PSTH computation.
+        pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
+        post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
+        signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
+
+        Returns:
+        psth_df (pd.DataFrame): DataFrame containing the PSTH with columns for each time point.
+                                Includes both mean and standard deviation.
+        """
+        if behavior_name not in self.behaviors.keys():
+            raise ValueError(f"Behavior '{behavior_name}' not found in behaviors.")
+
+        behavior_onsets = self.behaviors[behavior_name].onset
+        sampling_rate = self.fs
+
+        # Select the appropriate signal type
+        if signal_type == 'dFF':
+            if self.dFF is None:
+                self.compute_dff()
+            signal = np.array(self.dFF)
+        elif signal_type == 'zscore':
+            if self.zscore is None:
+                self.compute_zscore()
+            signal = np.array(self.zscore)
+        else:
+            raise ValueError("Invalid signal_type. Choose 'dFF' or 'zscore'.")
+
+        # Initialize PSTH data structure
+        n_samples_pre = int(pre_time * sampling_rate)
+        n_samples_post = int(post_time * sampling_rate)
+        psth_matrix = []
+
+        # Compute PSTH for each behavior onset
+        for onset in behavior_onsets:
+            onset_idx = np.searchsorted(self.timestamps, onset)
+            start_idx = max(onset_idx - n_samples_pre, 0)
+            end_idx = min(onset_idx + n_samples_post, len(signal))
+
+            # Extract signal around the event
+            psth_segment = signal[start_idx:end_idx]
+
+            # Pad if necessary to ensure equal length
+            if len(psth_segment) < n_samples_pre + n_samples_post:
+                padding = np.full((n_samples_pre + n_samples_post) - len(psth_segment), np.nan)
+                psth_segment = np.concatenate([psth_segment, padding])
+
+            psth_matrix.append(psth_segment)
+
+        # Convert to DataFrame for ease of analysis
+        time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
+        psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
+
+        # Calculate the mean and standard deviation for each time point
+        psth_mean = psth_df.mean(axis=0)
+        psth_std = psth_df.std(axis=0)
+
+        # Return a DataFrame with both mean and std
+        result_df = pd.DataFrame({
+            'mean': psth_mean,
+            'std': psth_std
+        })
+
+        self.psth_df = result_df
+        return result_df
+
+
+    def plot_psth(self, behavior_name, signal_type='zscore'):
+        """
+        Plot the Peri-Stimulus Time Histogram (PSTH) using combined onsets.
+
+        Parameters:
+        psth_df (pd.DataFrame): DataFrame containing the PSTH data.
+        behavior_name (str): Name of the behavior event for labeling the plot.
+        signal_type (str): Type of signal used for PSTH computation. Options are 'dFF' or 'zscore'.
+        """
+        if self.psth_df is None or self.psth_df.empty:
+            # Use combined onsets stored in self.behaviors
+            self.compute_psth(behavior_name, pre_time=5, post_time=10, signal_type=signal_type)
+
+        psth_df = self.psth_df
+
+        mean_psth = psth_df['mean']
+        std_psth = psth_df['std']
+
+        # Create the plot
+        plt.figure(figsize=(10, 5))
+        plt.plot(psth_df.index, mean_psth, label=f'{signal_type} Mean')
+        plt.fill_between(psth_df.index, mean_psth - std_psth, mean_psth + std_psth, alpha=0.3)
+
+        # Add labels and title
+        plt.xlabel('Time (s)')
+        plt.ylabel(f'{signal_type}')
+        plt.title(f'PSTH for {behavior_name}')
+
+        # Mark behavior onset
+        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
+        plt.legend()
+        plt.show()
+
+    def compute_first_investigation_psth(self, behavior_name='Investigation', pre_time=5, post_time=5, signal_type='zscore'):
+            """
+            Computes the PSTH for only the first 'Investigation' in each bout.
+
+            Parameters:
+            behavior_name (str): Name of the behavior event to use for PSTH computation.
+            pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
+            post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
+            signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
+            """
+            if behavior_name not in self.first_behavior_dict.keys():
+                raise ValueError(f"Behavior '{behavior_name}' not found in first_behavior_dict.")
+            
+            first_investigation_onsets = [event['Start Time'] for bout, event in self.first_behavior_dict.items() if event[behavior_name]['Start Time'] is not None]
+
+            sampling_rate = self.fs
+
+            # Select the appropriate signal type
+            if signal_type == 'dFF':
+                if self.dFF is None:
+                    self.compute_dff()
+                signal = np.array(self.dFF)
+            elif signal_type == 'zscore':
+                if self.zscore is None:
+                    self.compute_zscore()
+                signal = np.array(self.zscore)
+            else:
+                raise ValueError("Invalid signal_type. Choose 'dFF' or 'zscore'.")
+
+            # Initialize PSTH data structure
+            n_samples_pre = int(pre_time * sampling_rate)
+            n_samples_post = int(post_time * sampling_rate)
+            psth_matrix = []
+
+            # Compute PSTH for each first investigation onset
+            for onset in first_investigation_onsets:
+                onset_idx = np.searchsorted(self.timestamps, onset)
+                start_idx = max(onset_idx - n_samples_pre, 0)
+                end_idx = min(onset_idx + n_samples_post, len(signal))
+
+                # Extract signal around the event
+                psth_segment = signal[start_idx:end_idx]
+
+                # Pad if necessary to ensure equal length
+                if len(psth_segment) < n_samples_pre + n_samples_post:
+                    padding = np.full((n_samples_pre + n_samples_post) - len(psth_segment), np.nan)
+                    psth_segment = np.concatenate([psth_segment, padding])
+
+                psth_matrix.append(psth_segment)
+
+            # Convert to DataFrame for ease of analysis
+            time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
+            psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
+
+            # Calculate the mean and standard deviation for each time point
+            psth_mean = psth_df.mean(axis=0)
+            psth_std = psth_df.std(axis=0)
+
+            # Return a DataFrame with both mean and std
+            result_df = pd.DataFrame({
+                'mean': psth_mean,
+                'std': psth_std
+            })
+
+            self.psth_df = result_df
+            print(result_df)
+            return result_df
+
+
+
+# Might not need this function. Might Delete later
+def plot_first_investigation_psth_all_bouts(group_data, pre_time=5, post_time=5, signal_type='zscore'):
+    """
+    Plots the PSTH for the first investigation event for all bouts in each block in the group.
+
+    Parameters:
+    - group_data: The GroupTDTData object containing the blocks.
+    - pre_time: Time (in seconds) to plot before the event.
+    - post_time: Time (in seconds) to plot after the event.
+    - signal_type: The type of signal to use for the PSTH ('dFF' or 'zscore').
+    """
+
+    for block_name, tdt_data_obj in group_data.blocks.items():
+        # Iterate through each bout in the bout_dict
+        for bout_name, bout_data in tdt_data_obj.bout_dict.items():
+            # Check if the bout contains investigation events
+            if 'Investigation' in bout_data and bout_data['Investigation']:
+                # Get the first investigation event
+                first_investigation = bout_data['Investigation'][0]
+
+                if first_investigation['Start Time'] is not None:
+                    # Extract the start time of the first investigation
+                    event_start = first_investigation['Start Time']
+
+                    # Define the time window for the PSTH
+                    pre_event_time = event_start - pre_time
+                    post_event_time = event_start + post_time
+
+                    # Extract the signal type (dFF or zscore) and timestamps
+                    if signal_type == 'dFF':
+                        signal = tdt_data_obj.dFF
+                    elif signal_type == 'zscore':
+                        signal = tdt_data_obj.zscore
+                    else:
+                        raise ValueError("Invalid signal type. Use 'dFF' or 'zscore'.")
+
+                    timestamps = tdt_data_obj.timestamps
+
+                    # Find indices within the pre and post event time window
+                    psth_indices = (timestamps >= pre_event_time) & (timestamps <= post_event_time)
+                    psth_times = timestamps[psth_indices] - event_start  # Time relative to event
+                    psth_signal = signal[psth_indices]
+
+                    # Plot the PSTH for this bout
+                    plt.figure(figsize=(10, 6))
+                    plt.plot(psth_times, psth_signal, label=f'{tdt_data_obj.subject_name} - {bout_name}: First Investigation')
+                    plt.axvline(0, color='red', linestyle='--', label='Investigation Start')
+                    plt.xlabel('Time (s) relative to Investigation')
+                    plt.ylabel(signal_type)
+                    plt.title(f'PSTH of First Investigation for {tdt_data_obj.subject_name} - {bout_name}')
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.show()
+

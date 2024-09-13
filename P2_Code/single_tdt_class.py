@@ -43,10 +43,7 @@ class TDTData:
         self.s2_events = None
         self.bout_dict = {}
         self.first_behavior_dict = {}
-        # self.hab_dishab_metadata = {}
 
-        # hc
-        # self.hc_metadata = {}
 
 
 
@@ -327,28 +324,31 @@ class TDTData:
             # Call the helper function to extract and add the behavior events
             self.extract_single_behavior(behavior, behavior_df)
 
-    def combine_consecutive_behaviors(self, behavior_name='all', bout_time_threshold=5, min_occurrences=1):
+
+    def combine_consecutive_behaviors(self, behavior_name='all', bout_time_threshold=1, min_occurrences=1):
         """
-        Combines consecutive behavior events if they occur within a specified time threshold.
+        Combines consecutive behavior events if they occur within a specified time threshold,
+        and updates the Total Duration.
 
         Parameters:
         - behavior_name (str): The name of the behavior to process. If 'all', process all behaviors.
         - bout_time_threshold (float): Maximum time gap (in seconds) between consecutive behaviors to be combined.
         - min_occurrences (int): Minimum number of occurrences required for a combined bout to be kept.
         """
-        
+
         # Determine which behaviors to process
         if behavior_name == 'all':
             behaviors_to_process = self.behaviors.keys()  # Process all behaviors
         else:
             behaviors_to_process = [behavior_name]  # Process a single behavior
-        
+
         for behavior_event in behaviors_to_process:
             behavior_onsets = np.array(self.behaviors[behavior_event].onset)
             behavior_offsets = np.array(self.behaviors[behavior_event].offset)
 
             combined_onsets = []
             combined_offsets = []
+            combined_durations = []
 
             if len(behavior_onsets) == 0:
                 continue  # Skip this behavior if there are no onsets
@@ -368,9 +368,10 @@ class TDTData:
                     current_offset = behavior_offsets[next_idx]
                     next_idx += 1
 
-                # Add the combined onset and offset to the list
+                # Add the combined onset, offset, and total duration to the list
                 combined_onsets.append(current_onset)
                 combined_offsets.append(current_offset)
+                combined_durations.append(current_offset - current_onset)
 
                 # Move to the next set of events
                 start_idx = next_idx
@@ -382,118 +383,14 @@ class TDTData:
                 if num_occurrences >= min_occurrences:
                     valid_indices.append(i)
 
-            # Update the behavior with the combined onsets and offsets
+            # Update the behavior with the combined onsets, offsets, and durations
             self.behaviors[behavior_event].onset = [combined_onsets[i] for i in valid_indices]
             self.behaviors[behavior_event].offset = [combined_offsets[i] for i in valid_indices]
+            self.behaviors[behavior_event].Total_Duration = [combined_durations[i] for i in valid_indices]  # Update Total Duration
+
+            self.bout_dict = {}
 
 
-
-
-
-    '''********************************** PSTH **********************************'''
-    def compute_psth(self, behavior_name, pre_time=5, post_time=10, signal_type='dFF'):
-        """
-        Compute the Peri-Stimulus Time Histogram (PSTH) for a given behavior.
-
-        Parameters:
-        behavior_name (str): The name of the behavior event to use for PSTH computation.
-        pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
-        post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
-        signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
-
-        Returns:
-        psth_df (pd.DataFrame): DataFrame containing the PSTH with columns for each time point.
-                                Includes both mean and standard deviation.
-        """
-        if behavior_name not in self.behaviors.keys():
-            raise ValueError(f"Behavior '{behavior_name}' not found in behaviors.")
-
-        behavior_onsets = self.behaviors[behavior_name].onset
-        sampling_rate = self.fs
-
-        # Select the appropriate signal type
-        if signal_type == 'dFF':
-            if self.dFF is None:
-                self.compute_dff()
-            signal = np.array(self.dFF)
-        elif signal_type == 'zscore':
-            if self.zscore is None:
-                self.compute_zscore()
-            signal = np.array(self.zscore)
-        else:
-            raise ValueError("Invalid signal_type. Choose 'dFF' or 'zscore'.")
-
-        # Initialize PSTH data structure
-        n_samples_pre = int(pre_time * sampling_rate)
-        n_samples_post = int(post_time * sampling_rate)
-        psth_matrix = []
-
-        # Compute PSTH for each behavior onset
-        for onset in behavior_onsets:
-            onset_idx = np.searchsorted(self.timestamps, onset)
-            start_idx = max(onset_idx - n_samples_pre, 0)
-            end_idx = min(onset_idx + n_samples_post, len(signal))
-
-            # Extract signal around the event
-            psth_segment = signal[start_idx:end_idx]
-
-            # Pad if necessary to ensure equal length
-            if len(psth_segment) < n_samples_pre + n_samples_post:
-                padding = np.full((n_samples_pre + n_samples_post) - len(psth_segment), np.nan)
-                psth_segment = np.concatenate([psth_segment, padding])
-
-            psth_matrix.append(psth_segment)
-
-        # Convert to DataFrame for ease of analysis
-        time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
-        psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
-
-        # Calculate the mean and standard deviation for each time point
-        psth_mean = psth_df.mean(axis=0)
-        psth_std = psth_df.std(axis=0)
-
-        # Return a DataFrame with both mean and std
-        result_df = pd.DataFrame({
-            'mean': psth_mean,
-            'std': psth_std
-        })
-
-        self.psth_df = result_df
-        return result_df
-
-
-    def plot_psth(self, behavior_name, signal_type='zscore'):
-        """
-        Plot the Peri-Stimulus Time Histogram (PSTH) using combined onsets.
-
-        Parameters:
-        psth_df (pd.DataFrame): DataFrame containing the PSTH data.
-        behavior_name (str): Name of the behavior event for labeling the plot.
-        signal_type (str): Type of signal used for PSTH computation. Options are 'dFF' or 'zscore'.
-        """
-        if self.psth_df is None or self.psth_df.empty:
-            # Use combined onsets stored in self.behaviors
-            self.compute_psth(behavior_name, pre_time=5, post_time=10, signal_type=signal_type)
-
-        psth_df = self.psth_df
-
-        mean_psth = psth_df['mean']
-        std_psth = psth_df['std']
-
-        # Create the plot
-        plt.figure(figsize=(10, 5))
-        plt.plot(psth_df.index, mean_psth, label=f'{signal_type} Mean')
-        plt.fill_between(psth_df.index, mean_psth - std_psth, mean_psth + std_psth, alpha=0.3)
-
-        # Add labels and title
-        plt.xlabel('Time (s)')
-        plt.ylabel(f'{signal_type}')
-        plt.title(f'PSTH for {behavior_name}')
-
-        # Mark behavior onset
-        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
-        plt.legend()
-        plt.show()
 
 
     '''********************************** PLOTTING **********************************'''
@@ -674,71 +571,99 @@ class TDTData:
         self.first_behavior_dict = first_behavior_dict
 
 
-    def compute_first_investigation_psth(self, behavior_name='Investigation', pre_time=5, post_time=5, signal_type='zscore'):
-            """
-            Computes the PSTH for only the first 'Investigation' in each bout.
+    def remove_short_behaviors(self, behavior_name='all', min_duration=0):
+        """
+        Removes behaviors that have a total duration less than the specified minimum duration,
+        and updates the Total Duration for the remaining behaviors.
 
-            Parameters:
-            behavior_name (str): Name of the behavior event to use for PSTH computation.
-            pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
-            post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
-            signal_type (str): Type of signal to use for PSTH computation. Options are 'dFF' or 'zscore'.
-            """
-            if behavior_name not in self.first_behavior_dict.keys():
-                raise ValueError(f"Behavior '{behavior_name}' not found in first_behavior_dict.")
-            
-            first_investigation_onsets = [event['Start Time'] for bout, event in self.first_behavior_dict.items() if event[behavior_name]['Start Time'] is not None]
+        Parameters:
+        - behavior_name (str): The name of the behavior to process. If 'all', process all behaviors.
+        - min_duration (float): Minimum duration in seconds for a behavior to be retained.
+        """
 
-            sampling_rate = self.fs
+        # Determine which behaviors to process
+        if behavior_name == 'all':
+            behaviors_to_process = self.behaviors.keys()  # Process all behaviors
+        else:
+            behaviors_to_process = [behavior_name]  # Process a single behavior
 
-            # Select the appropriate signal type
-            if signal_type == 'dFF':
-                if self.dFF is None:
-                    self.compute_dff()
-                signal = np.array(self.dFF)
-            elif signal_type == 'zscore':
-                if self.zscore is None:
-                    self.compute_zscore()
-                signal = np.array(self.zscore)
-            else:
-                raise ValueError("Invalid signal_type. Choose 'dFF' or 'zscore'.")
+        for behavior_event in behaviors_to_process:
+            behavior_onsets = np.array(self.behaviors[behavior_event].onset)
+            behavior_offsets = np.array(self.behaviors[behavior_event].offset)
 
-            # Initialize PSTH data structure
-            n_samples_pre = int(pre_time * sampling_rate)
-            n_samples_post = int(post_time * sampling_rate)
-            psth_matrix = []
+            if len(behavior_onsets) == 0:
+                continue  # Skip if there are no events for this behavior
 
-            # Compute PSTH for each first investigation onset
-            for onset in first_investigation_onsets:
-                onset_idx = np.searchsorted(self.timestamps, onset)
-                start_idx = max(onset_idx - n_samples_pre, 0)
-                end_idx = min(onset_idx + n_samples_post, len(signal))
+            # Calculate the durations of each behavior
+            behavior_durations = behavior_offsets - behavior_onsets
 
-                # Extract signal around the event
-                psth_segment = signal[start_idx:end_idx]
+            # Filter events based on the minimum duration
+            valid_indices = np.where(behavior_durations >= min_duration)[0]
 
-                # Pad if necessary to ensure equal length
-                if len(psth_segment) < n_samples_pre + n_samples_post:
-                    padding = np.full((n_samples_pre + n_samples_post) - len(psth_segment), np.nan)
-                    psth_segment = np.concatenate([psth_segment, padding])
+            # Update the behavior's onsets, offsets, and durations with only the valid events
+            self.behaviors[behavior_event].onset = behavior_onsets[valid_indices].tolist()
+            self.behaviors[behavior_event].offset = behavior_offsets[valid_indices].tolist()
+            self.behaviors[behavior_event].Total_Duration = (behavior_offsets[valid_indices] - behavior_onsets[valid_indices]).tolist()  # Update Total Duration
 
-                psth_matrix.append(psth_segment)
 
-            # Convert to DataFrame for ease of analysis
-            time_axis = np.linspace(-pre_time, post_time, n_samples_pre + n_samples_post)
-            psth_df = pd.DataFrame(psth_matrix, columns=time_axis)
+#******************************PSTHS**************************************
+    def generate_first_event_peth(self, event_name, pre_time=5, post_time=5, bin_size=0.1):
+        """
+        Generates a peri-event time histogram (PETH) for the first occurrence of a given event in each block.
 
-            # Calculate the mean and standard deviation for each time point
-            psth_mean = psth_df.mean(axis=0)
-            psth_std = psth_df.std(axis=0)
+        Parameters:
+        event_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
+        pre_time (float): The time in seconds to include before the event.
+        post_time (float): The time in seconds to include after the event.
+        bin_size (float): The size of each bin in the histogram (in seconds).
 
-            # Return a DataFrame with both mean and std
-            result_df = pd.DataFrame({
-                'mean': psth_mean,
-                'std': psth_std
-            })
+        Returns:
+        None. Displays the PETH plot.
+        """
+        if event_name not in self.behaviors:
+            print(f"Event {event_name} not found in behaviors.")
+            return
+        
+        # Ensure z-score is computed
+        if self.zscore is None:
+            self.compute_zscore()
 
-            self.psth_df = result_df
-            print(result_df)
-            return result_df
+        # Extract the first onset of the event from the behaviors
+        event_onsets = self.behaviors[event_name].onset
+        if len(event_onsets) == 0:
+            print(f"No occurrences of {event_name} found.")
+            return
 
+        first_event_onset = event_onsets[0]  # Get the first occurrence
+
+        num_bins = int((pre_time + post_time) / bin_size)
+
+        # Find the peri-event window around the first event
+        start_time = first_event_onset - pre_time
+        end_time = first_event_onset + post_time
+        
+        start_idx = np.searchsorted(self.timestamps, start_time)
+        end_idx = np.searchsorted(self.timestamps, end_time)
+
+        # If the event is too close to the start or end of the recording, skip it
+        if start_idx < 0 or end_idx >= len(self.timestamps):
+            print("First event is too close to the edge of the recording, skipping.")
+            return
+
+        # Extract the z-scored ΔF/F values for this peri-event window
+        self.zscore = np.array(self.zscore)
+        peri_event_data = self.zscore[start_idx:end_idx]
+
+        # Generate time axis for the peri-event window
+        time_axis = np.linspace(-pre_time, post_time, len(peri_event_data))
+
+        # Plot the PETH
+        plt.figure(figsize=(10, 6))
+        plt.plot(time_axis, peri_event_data, color='blue', label=f'{event_name} Z-score')
+        plt.axvline(0, color='black', linestyle='--', label=f'{event_name} onset')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Z-scored ΔF/F')
+        plt.title(f'Peri-Event Time Histogram (PETH) for First {event_name}')
+        plt.legend()
+        plt.tight_layout()
+        plt.show()

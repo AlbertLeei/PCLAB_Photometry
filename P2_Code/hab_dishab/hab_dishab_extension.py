@@ -287,14 +287,13 @@ def hab_dishab_processing(self):
         csv_file_path = os.path.join(self.csv_base_path, csv_file_name)
 
         if os.path.exists(csv_file_path):
-            print(f"Processing {block_folder}...")
+            print(f"Hab_Dishab Processing {block_folder}...")
 
             # Call the three functions in sequence using the CSV file path
-            tdt_data_obj.smooth_signal()
             tdt_data_obj.hab_dishab_extract_intruder_bouts(csv_file_path)
             tdt_data_obj.hab_dishab_find_behavior_events_in_bout()
             tdt_data_obj.get_first_behavior()            # Get the first behavior in each bout
-            # tdt_data_obj.calculate_meta_data()           # Calculate metadata for each bout
+
 
 
 

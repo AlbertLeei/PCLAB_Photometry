@@ -22,6 +22,7 @@ class GroupTDTData:
         self.blocks = {}
         self.group_psth = None
 
+        self.parameters = {}  # Initialize the parameters log
         self.load_blocks()
 
         # Hab Dishab
@@ -32,6 +33,7 @@ class GroupTDTData:
     from hab_dishab.hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior
     # from P2_Code.social_pref. import 
     from home_cage.home_cage_extension import hc_processing
+
 
     def load_blocks(self):
         """
@@ -66,157 +68,33 @@ class GroupTDTData:
             csv_file_path = os.path.join(self.csv_base_path, csv_file_name)
             if os.path.exists(csv_file_path):
                 print(f"Processing {block_folder}...")
-                tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
-                tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
                 if remove_led_artifact:
                     tdt_data_obj.remove_initial_LED_artifact(t=t)
-                # tdt_data_obj.smooth_signal()
+                tdt_data_obj.smooth_signal()
+
+                tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
+                tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=1, min_occurrences=1)
+                tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.1)
+
                 # tdt_data_obj.downsample_data(N=16)
                 tdt_data_obj.verify_signal()
                 tdt_data_obj.compute_dff()
                 tdt_data_obj.compute_zscore()
 
-    def compute_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
-        """
-        Computes the group-level PSTH for the specified behavior and stores it in self.group_psth.
-        """
-        psths = []
-        for block_folder, tdt_data_obj in self.blocks.items():
-            # Compute individual PSTH
-            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
-            psths.append(psth_df.mean(axis=0).values)
-
-        # Ensure all PSTHs have the same length by trimming or padding
-        min_length = min(len(psth) for psth in psths)
-        trimmed_psths = [psth[:min_length] for psth in psths]
-
-        # Convert list of arrays to a DataFrame
-        self.group_psth = pd.DataFrame(trimmed_psths).mean(axis=0)
-        self.group_psth.index = psth_df.columns[:min_length]
-
-    def plot_group_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
-        """
-        Plots the group-level PSTH for the specified behavior, including the variance (standard deviation) between trials.
-        """
-        if self.group_psth is None:
-            raise ValueError("Group PSTH has not been computed. Call compute_group_psth first.")
-
-        psths_mean = []
-        psths_std = []
-        for block_folder, tdt_data_obj in self.blocks.items():
-            # Compute individual PSTH
-            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
-            psths_mean.append(psth_df['mean'].values)
-            psths_std.append(psth_df['std'].values)
-
-        # Convert list of arrays to DataFrames
-        psth_mean_df = pd.DataFrame(psths_mean)
-        psth_std_df = pd.DataFrame(psths_std)
-
-        # Calculate the mean and standard deviation across blocks
-        group_psth_mean = psth_mean_df.mean(axis=0)
-        group_psth_std = psth_std_df.mean(axis=0)
-
-        # Ensure the index matches the time points
-        time_points = psth_df.index
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(time_points, group_psth_mean, label=f'Group {signal_type} Mean')
-        plt.fill_between(time_points, group_psth_mean - group_psth_std, group_psth_mean + group_psth_std, 
-                        color='gray', alpha=0.3, label='_nolegend_')  # Exclude from legend
-        plt.xlabel('Time (s)')
-        plt.ylabel(f'{signal_type}')
-        plt.title(f'Group PSTH for {behavior_name}')
-        plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
-        # Set x-ticks at each second
-        plt.xticks(np.arange(int(time_points.min()), int(time_points.max())+1, 1))  # Ticks every second
-        plt.legend()
-        plt.show()
-
-def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='zscore'):
-    """
-    Plots the individual PSTHs for each block for the specified behavior.
-
-    Parameters:
-    behavior_name (str): The name of the behavior to plot.
-    pre_time (float): Time in seconds before the behavior event onset to include in the PSTH.
-    post_time (float): Time in seconds after the behavior event onset to include in the PSTH.
-    signal_type (str): The type of signal to use for PSTH computation. Options are 'zscore' or 'dFF'.
-    """
-    plt.figure(figsize=(10, 6))
-
-    # Iterate through each block and plot its PSTH
-    for block_folder, tdt_data_obj in self.blocks.items():
-        # Compute individual PSTH
-        psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
+#Short behavior
         
-        # Plot the individual trace
-        time_points = psth_df.index
-        plt.plot(time_points, psth_df['mean'].values, label=f'{block_folder}', alpha=0.6)
-
-    plt.xlabel('Time (s)')
-    plt.ylabel(f'{signal_type}')
-    plt.title(f'Individual PSTHs for {behavior_name}')
-    plt.axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
-
-    # Set x-ticks at each second
-    plt.xticks(np.arange(int(time_points.min()), int(time_points.max())+1, 1))  # Ticks every second
-    
-    # Add a legend outside the plot showing each block trace
-    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-    '''********************************** PLOTTING **********************************'''
-    def plot_individual_psths(self, behavior_name='Pinch', pre_time=5, post_time=5, signal_type='dFF'):
-        """
-        Plots the PSTH for each block individually.
-        """
-        rows = len(self.blocks)
-        figsize = (18, 5 * rows)
-
-        fig, axs = plt.subplots(rows, 1, figsize=figsize)
-        axs = axs.flatten()
-        plt.rcParams.update({'font.size': 16})
-
-        for i, (block_folder, tdt_data_obj) in enumerate(self.blocks.items()):
-            psth_df = tdt_data_obj.compute_psth(behavior_name, pre_time=pre_time, post_time=post_time, signal_type=signal_type)
-
-            # Extract the time axis (which should be the columns of the DataFrame)
-            time_axis = psth_df.index
-            
-            # Plot the mean PSTH with standard deviation shading
-            psth_mean = psth_df['mean'].values
-            psth_std = psth_df['std'].values
-            
-            axs[i].plot(time_axis, psth_mean, label=f'{tdt_data_obj.subject_name}', color='blue')
-            axs[i].fill_between(time_axis, psth_mean - psth_std, psth_mean + psth_std, color='blue', alpha=0.3)
-            
-            axs[i].set_title(f'{tdt_data_obj.subject_name}: {signal_type.capitalize()} Signal with {behavior_name} Bouts')
-            axs[i].set_ylabel(f'{signal_type}')
-            axs[i].set_xlabel('Time (s)')
-            axs[i].axvline(0, color='r', linestyle='--', label=f'{behavior_name} Onset')
-
-            # Set x-ticks at each second for this subplot
-            axs[i].set_xticks(np.arange(int(time_axis.min()), int(time_axis.max()) + 1, 1))
-            axs[i].legend()
-
-        plt.tight_layout()
-        plt.show()
-
 
     '''********************************** BEHAVIORS **********************************'''
-    def plot_all_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0):
+    def plot_all_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0.0, max_duration=np.inf):
         """
         Plot the specified behavior duration vs. mean Z-scored ΔF/F during all occurrences of that behavior for all blocks,
-        color-coded by individual subject identity. Only includes behavior events longer than min_duration seconds.
-        
+        color-coded by individual subject identity. Only includes behavior events longer than min_duration and shorter than 
+        max_duration seconds.
+
         Parameters:
         behavior_name (str): The name of the behavior to analyze (e.g., 'Investigation', 'Approach', etc.).
         min_duration (float): The minimum duration of behavior to include in the plot.
+        max_duration (float): The maximum duration of behavior to include in the plot.
         """
         behavior_durations = []
         mean_zscored_dffs = []
@@ -230,12 +108,13 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
                         # Loop through all events of the specified behavior in this bout
                         for event in behavior_data[behavior_name]:
                             duration = event['Total Duration']
-                            if duration > min_duration:  # Only include behavior events longer than min_duration
+                            # Only include behavior events longer than min_duration and shorter than max_duration
+                            if min_duration < duration < max_duration:  
                                 # Extract behavior duration and mean DA for this event
                                 behavior_durations.append(duration)
                                 mean_zscored_dffs.append(event['Mean zscore'])
                                 subject_names.append(block_data.subject_name)  # Block name as the subject identifier
-        
+
         # Convert lists to numpy arrays
         behavior_durations = np.array(behavior_durations, dtype=np.float64)
         mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
@@ -275,7 +154,7 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
         # Add labels and title
         plt.xlabel(f'Mean Z-scored ΔF/F during {behavior_name.lower()} events')
         plt.ylabel(f'{behavior_name} duration (s)')
-        plt.title(f'Correlation between {behavior_name} Duration and DA Response (All {behavior_name}s > {min_duration}s)')
+        plt.title(f'Correlation between {behavior_name} Duration and DA Response (All {behavior_name}s > {min_duration}s and < {max_duration}s)')
 
         # Display Pearson correlation and p-value
         plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
@@ -288,14 +167,17 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
         plt.show()
 
 
-    def plot_1st_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0):
+
+    def plot_1st_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0.0, max_duration=np.inf):
         """
         Plot the specified behavior duration vs. mean Z-scored ΔF/F during the first occurrence of that behavior
-        for all blocks, color-coded by individual subject identity.
+        for all blocks, color-coded by individual subject identity. Only includes the first behavior event that is longer 
+        than min_duration and shorter than max_duration seconds.
         
         Parameters:
         behavior_name (str): The name of the behavior to analyze (e.g., 'Investigation', 'Approach', etc.).
         min_duration (float): The minimum duration of behavior to include in the plot.
+        max_duration (float): The maximum duration of behavior to include in the plot.
         """
         behavior_durations = []
         mean_zscored_dffs = []
@@ -307,19 +189,23 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
                 for bout, behavior_data in block_data.bout_dict.items():
                     # Check if the behavior exists in the bout
                     if behavior_name in behavior_data:
-                        # Extract the first occurrence of the behavior
-                        if behavior_data[behavior_name]:  # Ensure there is at least one event for the behavior
-                            first_event = behavior_data[behavior_name][0]  # Get the first event of the behavior
-                            
-                            # Extract the behavior duration and mean DA for this first event
-                            duration = first_event.get('Total Duration', None)
-                            mean_zscore = first_event.get('Mean zscore', None)
-                            
-                            # Ensure the duration is valid (not None) and greater than min_duration
-                            if duration is not None and duration > min_duration:
+                        # Look through all occurrences of the behavior and find the first one that fits the criteria
+                        valid_event_found = False
+                        for event in behavior_data[behavior_name]:
+                            duration = event.get('Total Duration', None)
+                            mean_zscore = event.get('Mean zscore', None)
+
+                            # Check if the duration meets the specified criteria
+                            if duration is not None and min_duration < duration < max_duration:
                                 behavior_durations.append(duration)
                                 mean_zscored_dffs.append(mean_zscore)
                                 subject_names.append(block_data.subject_name)  # Block name as the subject identifier
+                                valid_event_found = True  # Mark that a valid event has been found
+                                break  # Exit the loop once the first valid event is found
+                        
+                        # If no valid event was found, continue to the next bout
+                        if not valid_event_found:
+                            continue
 
         # Convert lists to numpy arrays
         behavior_durations = np.array(behavior_durations, dtype=np.float64)
@@ -358,9 +244,9 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
         plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
 
         # Add labels and title
-        plt.xlabel(f'Mean Z-scored ΔF/F during 1st {behavior_name.lower()}')
+        plt.xlabel(f'Mean Z-scored ΔF/F during 1st valid {behavior_name.lower()} event')
         plt.ylabel(f'{behavior_name} duration (s)')
-        plt.title(f'Correlation between 1st {behavior_name} Duration and DA Response (All Blocks)')
+        plt.title(f'Correlation between 1st {behavior_name} Duration and DA Response (All Blocks > {min_duration}s and < {max_duration}s)')
         
         # Display Pearson correlation and p-value
         plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
@@ -371,7 +257,6 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
 
         plt.tight_layout()
         plt.show()
-
 
 
     def plot_behavior_durations_boutwise(self, behavior_name='Investigation', min_duration=0):
@@ -441,6 +326,7 @@ def plot_all_individual_psth(self, behavior_name='Pinch', pre_time=5, post_time=
 
         # Display the plot
         plt.show()
+
 
     def plot_behavior_mean_DA_boutwise(self, behavior_name='Investigation', min_duration=0):
         """
