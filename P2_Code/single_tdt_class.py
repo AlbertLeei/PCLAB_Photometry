@@ -7,6 +7,11 @@ import tdt
 import os
 from collections import OrderedDict
 import sys
+from scipy import signal, sparse
+from scipy.sparse.linalg import spsolve
+from sklearn.linear_model import LinearRegression
+from scipy.interpolate import interp1d
+
 
 root_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))  # Go up one directory to P2_Code
 # Add the root directory to sys.path
@@ -31,6 +36,19 @@ class TDTData:
         self.ISOS = 'ISOS'  # 405
         self.streams['DA'] = tdt_data.streams['_465A'].data
         self.streams['ISOS'] = tdt_data.streams['_405A'].data
+        
+        # Preprocessing
+        self.smoothed_DA = np.empty(1)
+        self.smoothed_ISOS = np.empty(1)
+        self.isosbestic_fc = np.empty(1)
+        self.DA_fc = np.empty(1)
+        self.cropped_DA = np.empty(1)
+        self.cropped_ISOS = np.empty(1)
+        self.isosbestic_corrected = np.empty(1)
+        self.DA_corrected = np.empty(1)
+        self.isosbestic_standardized = np.empty(1)
+        self.calcium_standardized = np.empty(1)
+        
         
         self.dFF = None
         self.std_dFF = None
@@ -61,85 +79,8 @@ class TDTData:
             for behavior_name in self.behaviors.keys():
                 print(behavior_name)
 
-    '''********************************** FILTERING **********************************'''
-    def smooth_signal(self, filter_window=100, filter_type='moving_average'):
-        '''
-        Smooths the signal using a specified filter type.
-
-        Parameters:
-        filter_window (int): The window size for the filter.
-        filter_type (str): The type of filter to use. Options are 'moving_average' or 'lowpass'.
-        '''
-        for stream_name in ['DA', 'ISOS']:
-            if stream_name in self.streams:
-                data = self.streams[stream_name]
-
-                if filter_type == 'moving_average':
-                    # Moving average filter
-                    b = np.ones(filter_window) / filter_window
-                    a = 1
-                elif filter_type == 'lowpass':
-                    # Lowpass filter (Butterworth)
-                    nyquist = 0.5 * self.fs
-                    cutoff_freq = 1.0  # Set cutoff frequency in Hz (adjust as needed)
-                    normal_cutoff = cutoff_freq / nyquist
-                    b, a = ss.butter(N=filter_window, Wn=normal_cutoff, btype='low', analog=False)
-                else:
-                    raise ValueError("Invalid filter_type. Choose 'moving_average' or 'lowpass'.")
-
-                smoothed_data = ss.filtfilt(b, a, data)
-                self.streams[stream_name] = smoothed_data
-
-        # Clear dFF and zscore since the raw data has changed
-        self.dFF = None
-        self.zscore = None
-
-                
-    def downsample_data(self, N=10):
-        downsampled_timestamps = self.timestamps[::N]
-        for stream_name in ['DA', 'ISOS']:
-            if stream_name in self.streams:
-                data = self.streams[stream_name]
-                downsampled_data = [np.mean(data[i:i + N]) for i in range(0, len(data), N)]
-                self.streams[stream_name] = downsampled_data
-        self.timestamps = downsampled_timestamps
-
-        # Clear dFF and zscore since the raw data has changed
-        self.dFF = None
-        self.zscore = None
-
-    def remove_time(self, start_time, end_time):
-        """
-        Removes a segment of time from the data streams and timestamps and then verifies the signal length.
-        
-        Parameters:
-        start_time (float): The start time of the segment to be removed (in seconds).
-        end_time (float): The end time of the segment to be removed (in seconds).
-        """
-        # Find the indices corresponding to the start and end times
-        start_index = np.where(self.timestamps >= start_time)[0][0]
-        end_index = np.where(self.timestamps <= end_time)[0][-1]
-        
-        # Create an array of boolean values, keeping all indices outside the specified range
-        keep_indices = np.ones_like(self.timestamps, dtype=bool)
-        keep_indices[start_index:end_index+1] = False
-        
-        # Update the streams by applying the boolean mask
-        for stream_name in ['DA', 'ISOS']:
-            if stream_name in self.streams:
-                self.streams[stream_name] = np.array(self.streams[stream_name])[keep_indices]  # Apply the mask
-        
-        # Update the timestamps by applying the boolean mask
-        self.timestamps = self.timestamps[keep_indices]
-        
-        # Clear dFF and zscore since the raw data has changed
-        self.dFF = None
-        self.zscore = None
-        
-        # Verify the signal lengths to ensure consistency
-        self.verify_signal()
-
-    def remove_initial_LED_artifact(self, t=10):
+    '''********************************** PREPROCESSING **********************************'''
+    def remove_initial_LED_artifact(self, t=30):
         '''
         This function removes the initial artifact caused by the onset of LEDs turning on.
         The artifact is assumed to occur within the first 't' seconds of the data.
@@ -149,6 +90,24 @@ class TDTData:
             if stream_name in self.streams:
                 self.streams[stream_name] = self.streams[stream_name][ind:]
         self.timestamps = self.timestamps[ind:]
+
+        # Clear dFF and zscore since the raw data has changed
+        self.dFF = None
+        self.zscore = None
+
+    def remove_final_data_segment(self, t=30):
+        '''
+        This function removes the final segment of the data, assumed to be the last 't' seconds.
+        It truncates the streams and timestamps accordingly.
+        '''
+        end_time = self.timestamps[-1] - t
+        ind = np.where(self.timestamps <= end_time)[0][-1]
+        
+        for stream_name in ['DA', 'ISOS']:
+            if stream_name in self.streams:
+                self.streams[stream_name] = self.streams[stream_name][:ind+1]
+        
+        self.timestamps = self.timestamps[:ind+1]
 
         # Clear dFF and zscore since the raw data has changed
         self.dFF = None
@@ -171,60 +130,220 @@ class TDTData:
             # Trim the timestamps to match the new signal length
             self.timestamps = self.timestamps[:min_length]
             
-            print(f"Signals trimmed to {min_length} samples to match the shortest signal.")
+            # print(f"Signals trimmed to {min_length} samples to match the shortest signal.")
+
+        # Smooth signal function as a class method
+    
+    def smooth_and_apply(self, window_len=1):
+        """Smooth both DA and ISOS signals using a window with requested size, and store them.
+
+        This method smooths the data streams (DA and ISOS) using the convolution of a scaled window 
+        with the signal. The signals are extended by reflecting the ends to minimize boundary effects.
+
+        Args:
+            window_len (int): The dimension of the smoothing window; should be an odd integer.
+            window (str): The type of window ('flat', 'hanning', 'hamming', 'bartlett', 'blackman').
+                        The 'flat' window produces a moving average smoothing.
+
+        Sets:
+            self.smoothed_DA: The smoothed and trimmed DA signal.
+            self.smoothed_ISOS: The smoothed and trimmed ISOS signal.
+        """
+
+        def smooth_signal(source, window_len):
+            """Helper function to smooth a signal."""
+            if source.ndim != 1:
+                raise ValueError("smooth only accepts 1 dimension arrays.")
+            if source.size < window_len:
+                raise ValueError("Input vector needs to be bigger than window size.")
+            if window_len < 3:
+                return source
+            
+            # Extend the signal by reflecting at the edges
+            s = np.r_[source[window_len-1:0:-1], source, source[-2:-window_len-1:-1]]
+            
+            # Create a window for smoothing (using a flat window here)
+            w = np.ones(window_len, 'd')
+            
+            # Convolve and return the smoothed signal
+            return np.convolve(w / w.sum(), s, mode='valid')
+        
+        # Apply smoothing to DA and ISOS streams, then trim the excess padding
+        if 'DA' in self.streams:
+            smoothed_DA = smooth_signal(self.streams['DA'], window_len)
+            # Trim the excess by slicing the array to match the original length
+            self.smoothed_DA = smoothed_DA[window_len//2:-window_len//2+1]
+            # self.smoothed_DA = smoothed_DA[:len(self.timestamps)]  # Trim the smoothed signal to match timestamps
+
+        
+        if 'ISOS' in self.streams:
+            smoothed_ISOS = smooth_signal(self.streams['ISOS'], window_len)
+            # Trim the excess by slicing the array to match the original length
+            self.smoothed_ISOS = smoothed_ISOS[window_len//2:-window_len//2+1]
+            # self.smoothed_ISOS = smoothed_ISOS[:len(self.timestamps)]  # Trim the smoothed signal to match timestamps
+
+        
+        # print(f"Signals smoothed and trimmed with window length {window_len}.")
+
+    def apply_ma_baseline_correction(self):
+        """
+        Applies centered moving average (MA) to both DA and ISOS signals and performs baseline correction,
+        with an option to crop the time array.
+
+        Args:
+            window_len (int): The window size for the moving average filter.
+            crop_time (bool): Whether to crop the time array to match the cropped signal length.
+
+        Sets:
+            self.isosbestic_fc: The baseline correction for the isosbestic signal.
+            self.DA_fc: The baseline correction for the DA signal.
+            self.isosbestic_corrected: The baseline-corrected isosbestic signal.
+            self.DA_corrected: The baseline-corrected DA signal.
+        """
+        # Ensure the signals are smoothed first
+        window_len = int(self.fs) * 60
+        if self.smoothed_ISOS is None or self.smoothed_DA is None:
+            self.smooth_and_apply()  # Smooth the signals if not already done
+
+        def centered_moving_average(source, window):
+            """Helper function to apply centered moving average to the signal."""
+            source = np.array(source)
+            if len(source.shape) == 1:
+                cumsum = np.cumsum(source)
+                moving_avg = (cumsum[window:] - cumsum[:-window]) / float(window)
+                source = source[int(window / 2):-int(window / 2)]  # Crop the source signal
+                return source, moving_avg
+            else:
+                raise RuntimeError(f"The input array has too many dimensions. Input: {len(source.shape)}D, Required: 1D")
+
+        # Apply centered moving average to both DA and ISOS streams
+        cropped_ISOS, self.isosbestic_fc = centered_moving_average(self.smoothed_ISOS, window_len)
+        cropped_DA, self.DA_fc = centered_moving_average(self.smoothed_DA, window_len)
+
+        self.cropped_DA = cropped_DA
+        self.cropped_ISOS = cropped_ISOS
+
+        # Perform baseline correction on both signals
+        self.isosbestic_corrected = (cropped_ISOS - self.isosbestic_fc) / self.isosbestic_fc
+        self.DA_corrected = (cropped_DA - self.DA_fc) / self.DA_fc
+ 
+        # Crop the time array to match the cropped signal length
+        cropped_time = self.timestamps[int(window_len / 2):-int(window_len / 2)]
+        self.timestamps = cropped_time
+            
+        # print(f"Baseline correction applied using centered moving average with window length {window_len}.")
+
+    def perform_standardization(self):
+            """Standardizes the corrected signals (isosbestic and calcium).
+
+            Args: 
+                isosbestic (arr): The baseline-corrected isosbestic signal.
+                calcium (arr): The baseline-corrected calcium signal.
+
+            Returns:   
+                isosbestic_standardized (arr): The standardized isosbestic signal.
+                calcium_standardized (arr): The standardized calcium signal.
+            """
+            isosbestic = self.isosbestic_corrected 
+            da = self.DA_corrected
+
+            # print("\nStarting standardization")
+
+            # Standardization: (value - median) / std deviation
+            self.isosbestic_standardized = (isosbestic - np.mean(isosbestic)) / np.std(isosbestic)
+            self.calcium_standardized = (da - np.mean(da)) / np.std(da)
+
+
+    def align_channels(self):
+        """
+        Function that performs linear regression between isosbestic_corrected and DA_corrected signals, and aligns
+        the fitted isosbestic with the DA signal. The results are stored in the class as a dictionary.
+        
+        This function grabs the timestamps, DA_corrected, and isosbestic_corrected directly from the class attributes.
+        """
+        # print("\nStarting linear regression and signal alignment for Isosbestic and DA signals!")
+
+        # Ensure necessary data is available
+        if len(self.DA_corrected) == 0 or len(self.isosbestic_corrected) == 0:
+            raise ValueError("Corrected DA and Isosbestic signals are not available. Please ensure baseline correction has been performed.")
+
+        # Perform linear regression
+        reg = LinearRegression()
+        
+        n = len(self.DA_corrected)
+        reg.fit(self.isosbestic_corrected.reshape(n, 1), self.DA_corrected.reshape(n, 1))
+        isosbestic_fitted = reg.predict(self.isosbestic_corrected.reshape(n, 1)).reshape(n,)
+        
+        # Store aligned signals as a class dictionary
+        self.aligned_signals = {
+            "time": self.timestamps,
+            "isosbestic_fitted": isosbestic_fitted,
+            "DA": self.DA_corrected
+        }
+
+    def compute_dFF(self):
+        """
+        Function that computes the dF/F of the fitted isosbestic and DA signals and saves it in self.dFF.
+
+        Returns:
+            df_f (arr): Relative changes of fluorescence over time.
+        """
+        # Access time, isosbestic, and DA from aligned_signals
+        isosbestic = self.aligned_signals["isosbestic_fitted"]
+        da = self.aligned_signals["DA"]
+        
+        # Compute dF/F by subtracting the fitted isosbestic from the DA signal
+        df_f = da - isosbestic
+        
+        # Save the computed dF/F into the class attribute
+        self.dFF = df_f
+        
+        return df_f
+
+
+    def remove_time_segment(self, start_time, end_time):
+        """
+        Remove the specified time segment between start_time and end_time
+        from the timestamps and associated signal streams.
+
+        Parameters:
+        start_time (float): The start time of the segment to be removed.
+        end_time (float): The end time of the segment to be removed.
+        """
+
+        # Find the indices for start_time and end_time
+        start_idx = np.searchsorted(self.timestamps, start_time)
+        end_idx = np.searchsorted(self.timestamps, end_time)
+
+        # Ensure valid indices
+        if start_idx >= end_idx:
+            raise ValueError("Invalid time segment. start_time must be less than end_time.")
+
+        # Stitch timestamps together (exclude segment)
+        self.timestamps = np.concatenate([self.timestamps[:start_idx], self.timestamps[end_idx:]])
+
+        # Stitch DA and ISOS signals together (exclude the segment)
+        self.streams[self.DA] = np.concatenate([self.streams[self.DA][:start_idx], self.streams[self.DA][end_idx:]])
+        self.streams[self.ISOS] = np.concatenate([self.streams[self.ISOS][:start_idx], self.streams[self.ISOS][end_idx:]])
+
+        # Optionally: update any other derived signals or properties that depend on the timestamps
+        if hasattr(self, 'smoothed_DA'):
+            self.smoothed_DA = np.concatenate([self.smoothed_DA[:start_idx], self.smoothed_DA[end_idx:]])
+        if hasattr(self, 'smoothed_ISOS'):
+            self.smoothed_ISOS = np.concatenate([self.smoothed_ISOS[:start_idx], self.smoothed_ISOS[end_idx:]])
+
+        # If you have other signals like baseline-corrected or standardized ones, apply stitching similarly
+        if hasattr(self, 'DA_corrected'):
+            self.DA_corrected = np.concatenate([self.DA_corrected[:start_idx], self.DA_corrected[end_idx:]])
+        if hasattr(self, 'isosbestic_corrected'):
+            self.isosbestic_corrected = np.concatenate([self.isosbestic_corrected[:start_idx], self.isosbestic_corrected[end_idx:]])
+
+        # Print a message to indicate successful removal
+        print(f"Removed time segment from {start_time}s to {end_time}s.")
+
 
 
     '''********************************** DFF AND ZSCORE **********************************'''
-    def execute_controlFit_dff(self, control, signal, filter_window=100):
-        """
-        Fits the control channel to the signal channel and calculates delta F/F (dFF).
-
-        Parameters:
-        control (numpy.array): The control signal (e.g., isosbestic control signal).
-        signal (numpy.array): The signal of interest (e.g., dopamine signal).
-        filter_window (int): The window size for the moving average filter.
-
-        Returns:
-        norm_data (numpy.array): The normalized delta F/F signal.
-        control_fit (numpy.array): The fitted control signal.
-        """
-        if filter_window > 1:
-            # Smoothing both signals
-            control_smooth = ss.filtfilt(np.ones(filter_window) / filter_window, 1, control)
-            signal_smooth = ss.filtfilt(np.ones(filter_window) / filter_window, 1, signal)
-        else:
-            control_smooth = control
-            signal_smooth = signal
-
-        # Fitting the control signal to the signal of interest
-        p = np.polyfit(control_smooth, signal_smooth, 1)
-        control_fit = p[0] * control_smooth + p[1]
-
-        # Calculating delta F/F (dFF)
-        norm_data = 100 * (signal_smooth - control_fit) / control_fit
-
-        return norm_data, control_fit
-
-    def compute_dff(self, filter_window=100):
-        """
-        Computes the delta F/F (dFF) signal by fitting the isosbestic control signal to the signal of interest.
-        
-        Parameters:
-        filter_window (int): The window size for the moving average filter.
-        """
-        if 'DA' in self.streams and 'ISOS' in self.streams:
-            signal = np.array(self.streams['DA'])
-            control = np.array(self.streams['ISOS'])
-            
-            # Call the execute_controlFit_dff method
-            self.dFF, self.control_fit = self.execute_controlFit_dff(control, signal, filter_window)
-            
-            # Calculate the standard deviation of dFF
-            self.std_dFF = np.std(self.dFF)
-        else:
-            self.dFF = None
-            self.std_dFF = None
-
     def compute_zscore(self, method='standard', baseline_start=None, baseline_end=None):
         """
         Computes the z-score of the delta F/F (dFF) signal and saves it as a class variable.
@@ -391,8 +510,6 @@ class TDTData:
             self.bout_dict = {}
 
 
-
-
     '''********************************** PLOTTING **********************************'''
     def plot_behavior_event(self, behavior_name, plot_type='zscore', ax=None):
         """
@@ -474,59 +591,236 @@ class TDTData:
             plt.show()
 
 
-    def plot(self, plot_type='zscore'):
+
+    def plot_signal(self, plot_type='zscore'):
         '''
         Plots the selected signal type.
 
         Parameters:
-        plot_type (str): The type of plot to generate. Options are 'raw', 'dFF', and 'zscore'.
+        plot_type (str): The type of plot to generate. Options are 'raw', 'smoothed', 'dFF', and 'zscore'.
         '''
         total_duration = self.timestamps[-1] - self.timestamps[0]  # Total duration of the data
-        num_major_ticks = 10  # Number of major ticks (adjust this as needed)
+        tick_interval = 120  # Set the tick interval
+        num_major_ticks = int(total_duration // tick_interval)
+
+        fig, axs = plt.subplots(2, 1, figsize=(18, 8), sharex=True, dpi=200)
 
         if plot_type == 'raw':
             if self.DA in self.streams and self.ISOS in self.streams:
-                plt.figure(figsize=(18, 6))
-                plt.plot(self.timestamps, self.streams[self.DA], linewidth=2, color='blue', label='DA')
-                plt.plot(self.timestamps, self.streams[self.ISOS], linewidth=2, color='blueviolet', label='ISOS')
-                plt.ylabel('mV')
-                plt.title(f'{self.subject_name}: Raw Demodulated Responses')
-                plt.legend(loc='upper right')
+                # Plot DA signal
+                axs[0].plot(self.timestamps, self.streams[self.DA], linewidth=2, color='blue', label='DA')
+                mean_DA = np.mean(self.streams[self.DA])
+                axs[0].axhline(mean_DA, color='red', linestyle='--', label=f'Mean DA: {mean_DA:.2f} mV')
+                axs[0].set_ylabel('mV')
+                axs[0].set_title(f'{self.subject_name}: DA Raw Demodulated Responses')
+                axs[0].legend(loc='upper right')
 
-        elif plot_type == 'dFF':
-            if self.dFF is not None:
-                plt.figure(figsize=(18, 6))
-                plt.plot(self.timestamps, self.dFF, label='dFF', color='black')  # Plot in black
-                plt.ylabel('ΔF/F')
-                plt.title(f'{self.subject_name}: Delta F/F (dFF) Signal')
-                plt.legend(loc='upper right')
-            else:
-                print("dFF data not available. Please compute dFF first.")
-                return
+                # Plot ISOS signal
+                axs[1].plot(self.timestamps, self.streams[self.ISOS], linewidth=2, color='purple', label='ISOS')
+                mean_ISOS = np.mean(self.streams[self.ISOS])
+                axs[1].axhline(mean_ISOS, color='red', linestyle='--', label=f'Mean ISOS: {mean_ISOS:.2f} mV')
+                axs[1].set_ylabel('mV')
+                axs[1].legend(loc='upper right')
 
-        elif plot_type == 'zscore':
-            if self.zscore is not None and len(self.zscore) > 0:
-                plt.figure(figsize=(18, 6))
-                plt.plot(self.timestamps, self.zscore, linewidth=2, color='black', label='z-score')  # Plot in black
-                plt.ylabel('z-score')
-                plt.title(f'{self.subject_name}: Z-score of Delta F/F (dFF) Signal')
-                plt.legend(loc='upper right')
-            else:
-                print("z-score data not available. Please compute z-score first.")
-                return
-        else:
-            raise ValueError("Invalid plot_type. Choose from 'raw', 'dFF', or 'zscore'.")
+        elif plot_type == 'smoothed':
+            if len(self.smoothed_DA) > 0 and len(self.smoothed_ISOS) > 0:
+                # Plot smoothed DA signal
+                axs[0].plot(self.timestamps, self.smoothed_DA, linewidth=2, color='blue', label='Smoothed DA')
+                mean_DA = np.mean(self.smoothed_DA)
+                axs[0].axhline(mean_DA, color='red', linestyle='--', label=f'Mean DA: {mean_DA:.2f} mV')
+                axs[0].set_ylabel('mV')
+                axs[0].set_title(f'{self.subject_name}: DA Smoothed Responses')
+                axs[0].legend(loc='upper right')
 
-        plt.xlabel('Seconds')
-        ax = plt.gca()
+                # Plot smoothed ISOS signal
+                axs[1].plot(self.timestamps, self.smoothed_ISOS, linewidth=2, color='purple', label='Smoothed ISOS')
+                mean_ISOS = np.mean(self.smoothed_ISOS)
+                axs[1].axhline(mean_ISOS, color='red', linestyle='--', label=f'Mean ISOS: {mean_ISOS:.2f} mV')
+                axs[1].set_ylabel('mV')
+                axs[1].legend(loc='upper right')
 
-        # Dynamically set the number of major ticks
-        ax.xaxis.set_major_locator(ticker.MultipleLocator(total_duration / num_major_ticks))
+        # Set common x-axis ticks and labels
+        xticks = np.arange(self.timestamps[0], self.timestamps[-1], tick_interval)
+        axs[1].set_xticks(xticks)
+        xticklabels = [f"{i:.0f}s" for i in xticks]
+        axs[1].set_xticklabels(xticklabels, fontsize=16, rotation=45)
+        axs[0].set_xlim(self.timestamps[0], self.timestamps[-1])
+        axs[1].set_xlim(self.timestamps[0], self.timestamps[-1])
 
-        # Remove the grid
-        plt.grid(False)
+        plt.tight_layout()
         plt.show()
 
+    def plot_baseline_corrected_signal(self):
+        """
+        Plots the baseline-corrected DA and ISOS signals.
+        """
+        if self.DA_corrected is None or self.isosbestic_corrected is None:
+            self.apply_ma_baseline_correction()
+        
+        # Define the signals to plot
+        signal_DA = self.DA_corrected
+        signal_ISOS = self.isosbestic_corrected
+        total_duration = self.timestamps[-1] - self.timestamps[0]
+        tick_interval = 30
+
+        fig, axs = plt.subplots(2, 1, figsize=(18, 8), sharex=True, dpi=200)
+
+        # Plot baseline-corrected DA signal
+        axs[0].plot(self.timestamps, signal_DA, linewidth=2, color='blue', label='DA (Baseline-Corrected)')
+        mean_DA = np.mean(signal_DA)
+        axs[0].axhline(mean_DA, color='red', linestyle='--', label=f'Mean DA: {mean_DA:.2f} mV')
+        axs[0].set_ylabel('mV')
+        axs[0].set_title(f'{self.subject_name}: Baseline-Corrected DA Signal')
+        axs[0].legend(loc='upper right')
+
+        # Plot baseline-corrected ISOS signal
+        axs[1].plot(self.timestamps, signal_ISOS, linewidth=2, color='purple', label='ISOS (Baseline-Corrected)')
+        mean_ISOS = np.mean(signal_ISOS)
+        axs[1].axhline(mean_ISOS, color='red', linestyle='--', label=f'Mean ISOS: {mean_ISOS:.2f} mV')
+        axs[1].set_ylabel('mV')
+        axs[1].set_title(f'{self.subject_name}: Baseline-Corrected ISOS Signal')
+        axs[1].legend(loc='upper right')
+
+        xticks = np.arange(self.timestamps[0], self.timestamps[-1], tick_interval)
+        axs[1].set_xticks(xticks)
+        xticklabels = [f"{i:.0f}s" for i in xticks]
+        axs[1].set_xticklabels(xticklabels, fontsize=16, rotation=45)
+        axs[0].set_xlim(self.timestamps[0], self.timestamps[-1])
+        axs[1].set_xlim(self.timestamps[0], self.timestamps[-1])
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_standardization(self):
+        """
+        Plots the standardized isosbestic and calcium (DA) signals.
+        """
+        if self.isosbestic_standardized is None or self.calcium_standardized is None:
+            print("Standardized signals not available. Please perform standardization first.")
+            return
+
+        fig, axs = plt.subplots(2, 1, figsize=(18, 8), dpi=200)
+
+        x = self.timestamps
+        xticks = np.arange(0, len(x), len(x) // 10)
+        xticklabels = [f'{int(tick/self.fs):.0f}s' for tick in xticks]
+
+        axs[0].plot(x, self.isosbestic_standardized, alpha=0.8, c='purple', lw=1.5)
+        axs[0].axhline(0, color='black', linestyle='--', lw=1.0)
+        axs[0].set_xticks(xticks)
+        axs[0].set_xticklabels(xticklabels, fontsize=16, rotation=45)
+        axs[0].set_ylabel("z-score")
+        axs[0].set_title("Standardized Isosbestic Signal")
+
+        axs[1].plot(x, self.calcium_standardized, alpha=0.8, c='blue', lw=1.5)
+        axs[1].axhline(0, color='black', linestyle='--', lw=1.0)
+        axs[1].set_xticks(xticks)
+        axs[1].set_xticklabels(xticklabels, fontsize=16, rotation=45)
+        axs[1].set_ylabel("z-score")
+        axs[1].set_title("Standardized DA Signal (Calcium)")
+        axs[1].set_xlabel("Time (s)")
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_aligned_signals(self):
+        """
+        Function that plots the aligned isosbestic_fitted and DA_corrected signals.
+        """
+        if not hasattr(self, 'aligned_signals') or len(self.aligned_signals) == 0:
+            raise ValueError("Aligned signals not found. Please run 'align_channels' before plotting.")
+
+        x = self.aligned_signals["time"]
+        isosbestic_fitted = self.aligned_signals["isosbestic_fitted"]
+        DA = self.aligned_signals["DA"]
+
+        x_max = x[-1]
+
+        fig, ax0 = plt.subplots(figsize=(18, 8), dpi=200)
+        
+        # Plot DA and isosbestic signals
+        ax0.plot(x, DA, alpha=0.8, c='blue', lw=2, zorder=0, label="DA")
+        ax0.plot(x, isosbestic_fitted, alpha=0.8, c='purple', lw=2, zorder=1, label="Isosbestic (Fitted)")
+        
+        ax0.axhline(0, color="black", lw=1.5)
+
+        ax0.set_xlim(0, x_max)
+        ax0.set_xlabel("Time (s)", fontsize=12)
+
+        ax0.set_ylabel("Change in signal (%)", fontsize=12)
+        ax0.set_ylim(min(np.min(isosbestic_fitted), np.min(DA)) - 0.05, max(np.max(isosbestic_fitted), np.max(DA)) + 0.05)
+
+        ax0.legend(loc=2, fontsize=12)
+        ax0.set_title("Alignment of Isosbestic and DA signals", fontsize=14)
+        ax0.tick_params(axis='both', which='major', labelsize=10)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_dFF(self):
+        """
+        Function to plot the computed dF/F signal stored in self.dFF.
+        """
+        if self.dFF is None:
+            raise ValueError("dF/F not computed. Please run compute_dFF() before plotting.")
+
+        x = self.aligned_signals["time"]
+        df_f = self.dFF
+        max_x = x[-1]
+
+        fig, ax0 = plt.subplots(figsize=(18, 8), dpi=200)
+        
+        ax0.plot(x, df_f, alpha=0.8, c="green", lw=2, label="ΔF/F")
+        ax0.axhline(0, color="black", lw=1.5)
+        
+        ax0.set_xlim(0, max_x)
+        ax0.set_xlabel("Time (s)", fontsize=12)
+
+        ax0.set_ylim(min(df_f) - 0.05, max(df_f) + 0.05)
+        ax0.set_ylabel(r"$\Delta$F/F", fontsize=12)
+
+        ax0.set_title(r"$\Delta$F/F Signal", fontsize=14)
+        ax0.legend(loc=2, fontsize=12)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_zscore(self):
+        """
+        Plots the z-score of the Delta F/F (dFF) signal.
+
+        This function generates a standalone plot of the z-score signal, without any additional subplots.
+        """
+        if self.zscore is not None and len(self.zscore) > 0:
+            # Create the figure for the z-score plot
+            fig, ax = plt.subplots(figsize=(18, 8), dpi=200)
+
+            # Plot the z-score signal
+            ax.plot(self.timestamps, self.zscore, linewidth=2, color='black', label='z-score')
+
+            # Set labels and title
+            ax.set_ylabel('z-score', fontsize=16)
+            ax.set_xlabel('Seconds', fontsize=16)
+            ax.set_title(f'{self.subject_name}: Z-score of Delta F/F (dFF) Signal', fontsize=18)
+
+            # Set x-ticks at an interval of 120 seconds
+            tick_interval = 120
+            xticks = np.arange(self.timestamps[0], self.timestamps[-1], tick_interval)
+            ax.set_xticks(xticks)
+            xticklabels = [f"{i:.0f}s" for i in xticks]
+            ax.set_xticklabels(xticklabels, fontsize=14, rotation=45)
+
+            # Set limits for the x-axis
+            ax.set_xlim(self.timestamps[0], self.timestamps[-1])
+
+            # Add a legend
+            ax.legend(loc='upper right', fontsize=14)
+
+            # Display the plot with tight layout
+            plt.tight_layout()
+            plt.show()
+        else:
+            print("Z-score data not available. Please compute z-score first.")
 
     '''********************************** First Behavior **********************************'''
     def get_first_behavior(self, behaviors=['Investigation']):

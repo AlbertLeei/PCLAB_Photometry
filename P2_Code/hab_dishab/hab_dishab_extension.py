@@ -54,6 +54,8 @@ def get_first_behavior(self, behaviors=['Investigation', 'Approach', 'Defeat', '
 
 
 '''********************************** FOR SINGLE OBJECT  **********************************'''
+
+
 def hab_dishab_plot_behavior_event(self, behavior_name='all', plot_type='dFF', ax=None):
     """
     Plots Delta F/F (dFF) or z-scored signal with behavior events for the habituation-dishabituation experiment.
@@ -144,12 +146,17 @@ def hab_dishab_plot_behavior_event(self, behavior_name='all', plot_type='dFF', a
     ax.set_xlabel('Seconds')
     ax.set_title(f'{self.subject_name}: {y_title} with {behavior_name.capitalize()} Bouts' if behavior_name != 'all' else f'{self.subject_name}: {y_title} with All Behavior Events')
 
+    # Manually set more x-tick marks (triple the ticks)
+    num_ticks = len(ax.get_xticks()) * 3  # Triples the current number of ticks
+    ax.set_xticks(np.linspace(self.timestamps[0], self.timestamps[-1], num_ticks))
+
     ax.legend()
     plt.tight_layout()
 
     # Show the plot if no external axis is provided
     if ax is None:
         plt.show()
+
 
 
 def hab_dishab_extract_intruder_bouts(self, csv_base_path):

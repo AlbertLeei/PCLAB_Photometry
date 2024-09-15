@@ -201,6 +201,71 @@ def extract_nth_behavior_mean_da(group_data, bouts, behavior='Investigation', n=
 
         return behavior_mean_df
 
+def extract_nth_behavior_mean_da_corrected(group_data, bouts, behavior='Investigation', n=1, max_duration=5.0):
+    """
+    Extracts the mean DA during the n-th occurrence of the specified behavior (e.g., 'Investigation') 
+    for each subject and bout, and limits the analysis to a maximum of max_duration seconds.
+    Returns the data in a DataFrame.
+
+    Parameters:
+    group_data (object): The object containing bout data for each subject.
+    bouts (list): A list of bout names to process.
+    behavior (str): The behavior of interest to extract mean DA for the n-th occurrence (default is 'Investigation').
+    n (int): The occurrence number of the behavior to extract (default is 1).
+    max_duration (float): The maximum duration in seconds to limit DA analysis for each behavior event (default is 5.0 seconds).
+
+    Returns:
+    pd.DataFrame: A DataFrame where each row represents a subject, 
+                  and each column represents the mean DA during the n-th occurrence of the specified behavior 
+                  for a specific bout, limited to max_duration seconds.
+    """
+
+    # Initialize an empty list to hold the data for each subject
+    data_list = []
+
+    # Populate the data_list from the group_data.blocks
+    for block_data in group_data.blocks.values():
+        if hasattr(block_data, 'bout_dict') and block_data.bout_dict:  # Ensure bout_dict exists and is populated
+            # Use the subject name from the TDTData object
+            block_data_dict = {'Subject': block_data.subject_name}
+
+            for bout in bouts:  # Only process bouts in the given list of bouts
+                if bout in block_data.bout_dict and behavior in block_data.bout_dict[bout]:
+                    # Ensure the requested n-th occurrence exists
+                    if len(block_data.bout_dict[bout][behavior]) >= n:
+                        nth_behavior = block_data.bout_dict[bout][behavior][n - 1]  # Get the n-th occurrence
+                        if 'Mean zscore' in nth_behavior:
+                            event_start = nth_behavior['Start Time']
+                            event_end = nth_behavior['End Time']
+                            event_duration = nth_behavior['Total Duration']
+
+                            # Limit the analysis to max_duration seconds
+                            analysis_end_time = min(event_start + max_duration, event_end)
+
+                            # Get the z-score signal during the limited event window
+                            zscore_indices = (block_data.timestamps >= event_start) & (block_data.timestamps <= analysis_end_time)
+                            mean_da_nth_behavior = np.mean(block_data.zscore[zscore_indices])  # Compute mean DA
+                        else:
+                            mean_da_nth_behavior = np.nan  # If no z-score data, assign NaN
+                    else:
+                        mean_da_nth_behavior = np.nan  # If fewer than n occurrences, assign NaN
+
+                    block_data_dict[bout] = mean_da_nth_behavior
+                else:
+                    block_data_dict[bout] = np.nan  # If no data, assign NaN
+
+            # Append the block's data to the data_list
+            data_list.append(block_data_dict)
+
+    # Convert the data_list into a DataFrame
+    behavior_mean_df = pd.DataFrame(data_list)
+
+    # Set the index to 'Subject'
+    behavior_mean_df.set_index('Subject', inplace=True)
+
+    return behavior_mean_df
+
+
 
 def plot_approach_vs_aggression(group_data, min_duration=0):
     """

@@ -59,30 +59,53 @@ class GroupTDTData:
         """
         return list(self.blocks.keys())
 
-    def batch_process(self, remove_led_artifact=True, t=20):
+    def remove_time_segments_from_block(self, block_name, time_segments):
+        """
+        Remove specified time segments from a given block's data.
+
+        Parameters:
+        block_name (str): The name of the block (file) to remove time segments from.
+        time_segments (list): A list of tuples representing the time segments to remove [(start_time, end_time), ...].
+        """
+        tdt_data_obj = self.blocks.get(block_name, None)
+        if tdt_data_obj is None:
+            print(f"Block {block_name} not found.")
+            return
+
+        for (start_time, end_time) in time_segments:
+            tdt_data_obj.remove_time_segment(start_time, end_time)
+
+        print(f"Removed specified time segments from block {block_name}.")
+
+    def batch_process(self, remove_led_artifact=True, t=30, time_segments_to_remove=None):
         """
         Batch processes the TDT data by extracting behaviors, removing LED artifacts, and computing z-score.
         """
         for block_folder, tdt_data_obj in self.blocks.items():
             csv_file_name = f"{block_folder}.csv"
             csv_file_path = os.path.join(self.csv_base_path, csv_file_name)
+            # Check if the subject name is in the time_segments_to_remove dictionary
+            if time_segments_to_remove and tdt_data_obj.subject_name in time_segments_to_remove:
+                # Remove specific time segments for this block
+                self.remove_time_segments_from_block(block_folder, time_segments_to_remove[tdt_data_obj.subject_name])
+
             if os.path.exists(csv_file_path):
                 print(f"Processing {block_folder}...")
                 if remove_led_artifact:
                     tdt_data_obj.remove_initial_LED_artifact(t=t)
-                tdt_data_obj.smooth_signal()
+                    tdt_data_obj.remove_final_data_segment(t = 10)
+                
+                tdt_data_obj.smooth_and_apply(window_len=int(tdt_data_obj.fs)*2)
+                tdt_data_obj.apply_ma_baseline_correction()
+                tdt_data_obj.align_channels()
+                tdt_data_obj.compute_dFF()
+                tdt_data_obj.compute_zscore()
 
                 tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
                 tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=1, min_occurrences=1)
                 tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.1)
 
-                # tdt_data_obj.downsample_data(N=16)
                 tdt_data_obj.verify_signal()
-                tdt_data_obj.compute_dff()
-                tdt_data_obj.compute_zscore()
-
-#Short behavior
-        
 
     '''********************************** BEHAVIORS **********************************'''
     def plot_all_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0.0, max_duration=np.inf):
@@ -166,6 +189,187 @@ class GroupTDTData:
         plt.tight_layout()
         plt.show()
 
+
+    def plot_all_behavior_vs_dff_all_max_time(self, behavior_name='Investigation', min_duration=0.0, max_analysis_time=np.inf):
+        """
+        Plot the specified behavior duration vs. mean Z-scored ΔF/F during all occurrences of that behavior for all blocks,
+        color-coded by individual subject identity. Only includes behavior events longer than min_duration seconds.
+        Mean DA is calculated from the behavior onset to a limited time defined by max_analysis_time.
+
+        Parameters:
+        behavior_name (str): The name of the behavior to analyze (e.g., 'Investigation', 'Approach', etc.).
+        min_duration (float): The minimum duration of behavior to include in the plot.
+        max_analysis_time (float): The maximum amount of time, starting from the behavior onset, to calculate mean DA.
+        """
+        behavior_durations = []
+        mean_zscored_dffs = []
+        subject_names = []
+
+        # Loop through each block in self.blocks
+        for block_name, block_data in self.blocks.items():
+            if block_data.bout_dict:  # Make sure bout_dict is populated
+                for bout, behavior_data in block_data.bout_dict.items():
+                    if behavior_name in behavior_data:
+                        # Loop through all events of the specified behavior in this bout
+                        for event in behavior_data[behavior_name]:
+                            duration = event['Total Duration']
+                            # Only include behavior events longer than min_duration
+                            if duration >= min_duration:
+                                event_start = event['Start Time']
+                                # Determine the end of the analysis window based on max_analysis_time
+                                analysis_end_time = min(event_start + max_analysis_time, event['End Time'])
+
+                                # Get the z-score signal during the allowed analysis window
+                                zscore_indices = (block_data.timestamps >= event_start) & (block_data.timestamps <= analysis_end_time)
+                                mean_da = np.mean(block_data.zscore[zscore_indices])  # Compute mean DA within the allowed time window
+
+                                # Append the duration and mean DA to the lists
+                                behavior_durations.append(duration)
+                                mean_zscored_dffs.append(mean_da)
+                                subject_names.append(block_data.subject_name)  # Block name as the subject identifier
+
+        # Convert lists to numpy arrays
+        behavior_durations = np.array(behavior_durations, dtype=np.float64)
+        mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
+        subject_names = np.array(subject_names)
+
+        # Filter out any entries where either behavior_durations or mean_zscored_dffs is NaN
+        valid_indices = ~np.isnan(behavior_durations) & ~np.isnan(mean_zscored_dffs)
+        behavior_durations = behavior_durations[valid_indices]
+        mean_zscored_dffs = mean_zscored_dffs[valid_indices]
+        subject_names = subject_names[valid_indices]
+
+        if len(mean_zscored_dffs) == 0 or len(behavior_durations) == 0:
+            print("No valid data points for correlation.")
+            return
+
+        # Calculate Pearson correlation
+        r, p = stats.pearsonr(mean_zscored_dffs, behavior_durations)
+
+        # Get unique subjects and assign colors
+        unique_subjects = np.unique(subject_names)
+        color_palette = sns.color_palette("hsv", len(unique_subjects))
+        subject_color_map = {subject: color_palette[i] for i, subject in enumerate(unique_subjects)}
+
+        # Plotting the scatter plot
+        plt.figure(figsize=(12, 6))
+        
+        for subject in unique_subjects:
+            # Create a mask for each subject
+            mask = subject_names == subject
+            plt.scatter(mean_zscored_dffs[mask], behavior_durations[mask], 
+                        color=subject_color_map[subject], label=subject, alpha=0.6)
+
+        # Adding the regression line
+        slope, intercept = np.polyfit(mean_zscored_dffs, behavior_durations, 1)
+        plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
+
+        # Add labels and title
+        plt.xlabel(f'Mean Z-scored ΔF/F during {behavior_name.lower()} events (limited to {max_analysis_time}s from onset)')
+        plt.ylabel(f'{behavior_name} duration (s)')
+        plt.title(f'Correlation between {behavior_name} Duration and DA Response (Max Analysis Time: {max_analysis_time}s)')
+
+        # Display Pearson correlation and p-value
+        plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
+                transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
+
+        # Add a legend with subject names
+        plt.legend(title='Subject', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_all_behavior_vs_dff_all_with_flexible_time(self, behavior_name='Investigation', min_duration=0.0, max_analysis_time=2.0):
+        """
+        Plot the specified behavior duration vs. mean Z-scored ΔF/F during all occurrences of that behavior for all blocks,
+        color-coded by individual subject identity. Only includes behavior events longer than min_duration seconds.
+        Mean DA is calculated from the behavior onset up to max_analysis_time or the behavior duration, whichever is shorter.
+
+        Parameters:
+        behavior_name (str): The name of the behavior to analyze (e.g., 'Investigation', 'Approach', etc.).
+        min_duration (float): The minimum duration of behavior to include in the plot.
+        max_analysis_time (float): The maximum amount of time, starting from the behavior onset, to calculate mean DA.
+                                If the behavior is shorter than max_analysis_time, the actual behavior duration is used.
+        """
+        behavior_durations = []
+        mean_zscored_dffs = []
+        subject_names = []
+
+        # Loop through each block in self.blocks
+        for block_name, block_data in self.blocks.items():
+            if block_data.bout_dict:  # Make sure bout_dict is populated
+                for bout, behavior_data in block_data.bout_dict.items():
+                    if behavior_name in behavior_data:
+                        # Loop through all events of the specified behavior in this bout
+                        for event in behavior_data[behavior_name]:
+                            duration = event['Total Duration']
+                            # Only include behavior events longer than min_duration
+                            if duration >= min_duration:
+                                event_start = event['Start Time']
+                                # Use the actual duration of the behavior if it's shorter than max_analysis_time
+                                analysis_duration = min(duration, max_analysis_time)
+                                analysis_end_time = event_start + analysis_duration
+
+                                # Get the z-score signal during the allowed analysis window
+                                zscore_indices = (block_data.timestamps >= event_start) & (block_data.timestamps <= analysis_end_time)
+                                mean_da = np.mean(block_data.zscore[zscore_indices])  # Compute mean DA within the allowed time window
+
+                                # Append the duration and mean DA to the lists
+                                behavior_durations.append(duration)
+                                mean_zscored_dffs.append(mean_da)
+                                subject_names.append(block_data.subject_name)  # Block name as the subject identifier
+
+        # Convert lists to numpy arrays
+        behavior_durations = np.array(behavior_durations, dtype=np.float64)
+        mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
+        subject_names = np.array(subject_names)
+
+        # Filter out any entries where either behavior_durations or mean_zscored_dffs is NaN
+        valid_indices = ~np.isnan(behavior_durations) & ~np.isnan(mean_zscored_dffs)
+        behavior_durations = behavior_durations[valid_indices]
+        mean_zscored_dffs = mean_zscored_dffs[valid_indices]
+        subject_names = subject_names[valid_indices]
+
+        if len(mean_zscored_dffs) == 0 or len(behavior_durations) == 0:
+            print("No valid data points for correlation.")
+            return
+
+        # Calculate Pearson correlation
+        r, p = stats.pearsonr(mean_zscored_dffs, behavior_durations)
+
+        # Get unique subjects and assign colors
+        unique_subjects = np.unique(subject_names)
+        color_palette = sns.color_palette("hsv", len(unique_subjects))
+        subject_color_map = {subject: color_palette[i] for i, subject in enumerate(unique_subjects)}
+
+        # Plotting the scatter plot
+        plt.figure(figsize=(12, 6))
+        
+        for subject in unique_subjects:
+            # Create a mask for each subject
+            mask = subject_names == subject
+            plt.scatter(mean_zscored_dffs[mask], behavior_durations[mask], 
+                        color=subject_color_map[subject], label=subject, alpha=0.6)
+
+        # Adding the regression line
+        slope, intercept = np.polyfit(mean_zscored_dffs, behavior_durations, 1)
+        plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
+
+        # Add labels and title
+        plt.xlabel(f'Mean Z-scored ΔF/F during {behavior_name.lower()} events (up to {max_analysis_time}s)')
+        plt.ylabel(f'{behavior_name} duration (s)')
+        plt.title(f'Correlation between {behavior_name} Duration and DA Response (Max Analysis Time: {max_analysis_time}s or Actual Duration)')
+
+        # Display Pearson correlation and p-value
+        plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
+                transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
+
+        # Add a legend with subject names
+        plt.legend(title='Subject', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        plt.tight_layout()
+        plt.show()
 
 
     def plot_1st_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0.0, max_duration=np.inf):
