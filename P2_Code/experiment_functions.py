@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from scipy.stats import linregress
+from scipy.optimize import curve_fit
 
 # These functions are used for all experiments
 
@@ -201,6 +203,7 @@ def extract_nth_behavior_mean_da(group_data, bouts, behavior='Investigation', n=
 
         return behavior_mean_df
 
+
 def extract_nth_behavior_mean_da_corrected(group_data, bouts, behavior='Investigation', n=1, max_duration=5.0):
     """
     Extracts the mean DA during the n-th occurrence of the specified behavior (e.g., 'Investigation') 
@@ -264,7 +267,6 @@ def extract_nth_behavior_mean_da_corrected(group_data, bouts, behavior='Investig
     behavior_mean_df.set_index('Subject', inplace=True)
 
     return behavior_mean_df
-
 
 
 def plot_approach_vs_aggression(group_data, min_duration=0):
@@ -343,6 +345,134 @@ def plot_approach_vs_aggression(group_data, min_duration=0):
     plt.show()
 
 
+def extract_nth_to_mth_behavior_mean_da(group_data, bouts, behavior='Investigation', n_start=1, n_end=5):
+    """
+    Extracts the mean DA during the n-th to m-th occurrences of the specified behavior (e.g., 'Investigation')
+    for each subject and bout, and returns the data in a DataFrame.
 
+    Parameters:
+    group_data (object): The object containing bout data for each subject.
+    bouts (list): A list of bout names to process.
+    behavior (str): The behavior of interest to extract mean DA for (default is 'Investigation').
+    n_start (int): The starting occurrence number of the behavior to extract.
+    n_end (int): The ending occurrence number of the behavior to extract.
 
+    Returns:
+    pd.DataFrame: A DataFrame where each row represents a subject,
+                  and each column represents the mean DA during the n-th to m-th occurrences of the specified behavior 
+                  for a specific bout.
+    """
+    # Initialize an empty list to hold the data for each subject
+    data_list = []
 
+    # Populate the data_list from the group_data.blocks
+    for block_data in group_data.blocks.values():
+        if hasattr(block_data, 'bout_dict') and block_data.bout_dict:  # Ensure bout_dict exists and is populated
+            # Use the subject name from the TDTData object
+            block_data_dict = {'Subject': block_data.subject_name}
+
+            for bout in bouts:  # Only process bouts in the given list of bouts
+                mean_da_values = []
+                if bout in block_data.bout_dict and behavior in block_data.bout_dict[bout]:
+                    # Collect the mean DA for the n-th to m-th occurrences
+                    for n in range(n_start, n_end + 1):
+                        if len(block_data.bout_dict[bout][behavior]) >= n:
+                            nth_behavior = block_data.bout_dict[bout][behavior][n - 1]  # Get the n-th occurrence
+                            if 'Mean zscore' in nth_behavior:
+                                mean_da_nth_behavior = nth_behavior['Mean zscore']
+                            else:
+                                mean_da_nth_behavior = np.nan  # If no z-score data, assign NaN
+                        else:
+                            mean_da_nth_behavior = np.nan  # If fewer than n occurrences, assign NaN
+                        mean_da_values.append(mean_da_nth_behavior)
+
+                block_data_dict[bout] = mean_da_values
+
+            # Append the block's data to the data_list
+            data_list.append(block_data_dict)
+
+    # Convert the data_list into a DataFrame
+    behavior_mean_df = pd.DataFrame(data_list)
+
+    # Set the index to 'Subject'
+    behavior_mean_df.set_index('Subject', inplace=True)
+
+    return behavior_mean_df
+
+# Exponential decay model
+def exp_decay(t, A, k):
+    return A * np.exp(-k * t)
+
+def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, metric_type='slope'):
+    """
+    Plots the mean DA from the 1st to 5th investigations across bouts and calculates either the slope or decay constant.
+    
+    Parameters:
+    mean_da_df (pd.DataFrame): A DataFrame where each row represents a subject, and each column represents a list of mean DA
+                               values during the investigations for a specific bout.
+    bouts (list): A list of bout names to plot.
+    max_investigations (int): Maximum number of investigations to consider (default is 5).
+    metric_type (str): Whether to compute 'slope' or 'decay' (default is 'slope').
+    
+    Returns:
+    None. Displays the line plot and prints the slope or decay constant for each bout.
+    """
+    # Create a plot for each bout
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Dictionary to store slopes or decay constants for each bout
+    metrics = {}
+
+    for bout in bouts:
+        # Extract data for the bout and truncate to the first 'max_investigations' investigations
+        bout_data = mean_da_df[bout].apply(lambda x: x[:max_investigations] + [np.nan] * (max_investigations - len(x)) if len(x) < max_investigations else x[:max_investigations])
+        bout_data = np.array(bout_data.tolist())  # Extract the list of mean DA values for each subject
+
+        # Average across subjects for each investigation (column-wise mean)
+        mean_across_investigations = np.nanmean(bout_data, axis=0)
+
+        # Define time points (investigation numbers)
+        x_values = np.arange(1, len(mean_across_investigations) + 1)  # [1, 2, 3, 4, 5] for investigations
+
+        if metric_type == 'slope':
+            # Calculate slope using linear regression (linregress)
+            slope, intercept, r_value, p_value, std_err = linregress(x_values, mean_across_investigations)
+            metrics[bout] = slope
+
+            # Plot the line for the bout with slope in the label
+            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', label=f'{bout} (slope: {slope:.2f})')
+
+        elif metric_type == 'decay':
+            # Fit the exponential decay model to the data
+            try:
+                popt, _ = curve_fit(exp_decay, x_values, mean_across_investigations, p0=(mean_across_investigations[0], 0.1))
+                A, k = popt  # A is the initial value, k is the decay constant
+                metrics[bout] = k
+
+                # Generate fitted decay curve for plotting
+                fitted_curve = exp_decay(x_values, *popt)
+
+                # Plot the line for the bout with decay constant in the label
+                ax.plot(x_values, fitted_curve, marker='o', linestyle='-', label=f'{bout} (decay: {k:.2f})')
+            except RuntimeError:
+                metrics[bout] = np.nan  # If fitting fails, store NaN
+
+        else:
+            raise ValueError("Invalid metric_type. Use 'slope' or 'decay'.")
+
+    # Add labels, title, and legend
+    ax.set_xlabel('Investigation Number')
+    ax.set_ylabel('Mean DA (z-scored dFF)')
+    ax.set_title(f'Mean DA during 1st to {max_investigations} Investigations Across Bouts ({metric_type.capitalize()})')
+    ax.legend()
+
+    # Display the plot
+    plt.tight_layout()
+    plt.show()
+
+    # Print the slopes or decay constants
+    for bout, metric in metrics.items():
+        if metric_type == 'slope':
+            print(f'Slope for {bout}: {metric:.2f}')
+        elif metric_type == 'decay':
+            print(f'Decay constant for {bout}: {metric:.4f}')

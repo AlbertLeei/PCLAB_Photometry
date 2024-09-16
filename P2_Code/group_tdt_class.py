@@ -32,7 +32,7 @@ class GroupTDTData:
     
     from hab_dishab.hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior
     # from P2_Code.social_pref. import 
-    from home_cage.home_cage_extension import hc_processing
+    from home_cage.home_cage_extension import hc_processing, hc_plot_individual_behavior
 
 
     def load_blocks(self):
@@ -93,7 +93,7 @@ class GroupTDTData:
                 print(f"Processing {block_folder}...")
                 if remove_led_artifact:
                     tdt_data_obj.remove_initial_LED_artifact(t=t)
-                    tdt_data_obj.remove_final_data_segment(t = 10)
+                    # tdt_data_obj.remove_final_data_segment(t = 10)
                 
                 tdt_data_obj.smooth_and_apply(window_len=int(tdt_data_obj.fs)*2)
                 tdt_data_obj.apply_ma_baseline_correction()
@@ -103,7 +103,7 @@ class GroupTDTData:
 
                 tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
                 tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=1, min_occurrences=1)
-                tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.1)
+                tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
 
                 tdt_data_obj.verify_signal()
 
@@ -598,4 +598,152 @@ class GroupTDTData:
         ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), title="Subjects")
 
         # Display the plot
+        plt.show()
+
+
+    '''********************************** PETHS **********************************'''
+    def compute_first_event_peth_all_blocks(self, behavior_name, pre_time=5, post_time=5, bin_size=0.1):
+        """
+        Computes the peri-event time histogram (PETH) data for the first occurrence of a given event in each block.
+        Uses the TDTData class's PETH function and stores the peri-event data (zscore, dFF, and time axis) for each block
+        as a class variable.
+
+        Parameters:
+        behavior_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
+        pre_time (float): The time in seconds to include before the event.
+        post_time (float): The time in seconds to include after the event.
+        bin_size (float): The size of each bin in the histogram (in seconds).
+
+        Returns:
+        None. Stores peri-event data for all blocks as a class variable.
+        """
+        self.peri_event_data_all_blocks = {}  # Initialize a dictionary to store PETH data for each block
+
+        # Loop through each block in self.blocks
+        for block_name, block_data in self.blocks.items():
+            # Ensure that the TDTData class has the function to compute peri-event data
+            block_data.compute_1st_event_peth(behavior_name=behavior_name, pre_time=pre_time, post_time=post_time, bin_size=bin_size)
+
+            # Extract the peri-event data (assumed to be stored in block_data.peri_event_data after the method is called)
+            if hasattr(block_data, 'peri_event_data'):
+                self.peri_event_data_all_blocks[block_name] = block_data.peri_event_data
+            else:
+                print(f"No peri-event data found for {block_name} after calling generate_first_event_peth.")
+
+
+
+
+    def plot_1st_event_peth_all_traces(self, signal_type='zscore'):
+        """
+        Plots the peri-event time histogram (PETH) based on the previously computed data for all blocks.
+
+        Parameters:
+        signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
+
+        Returns:
+        None. Displays the PETH plot for all blocks on the same graph.
+        """
+        # Ensure that peri-event data for all blocks is already computed
+        if not hasattr(self, 'peri_event_data_all_blocks'):
+            print("No peri-event data found. Please compute PETH first using compute_first_event_peth_all_blocks.")
+            return
+
+        plt.figure(figsize=(12, 6))
+        ylabel = 'Z-scored ΔF/F'
+        # Loop through each block and plot its peri-event data
+        for block_name, peri_event_data in self.peri_event_data_all_blocks.items():
+            time_axis = peri_event_data['time_axis']
+            
+            if signal_type == 'zscore':
+                plt.plot(time_axis, peri_event_data['zscore'], label=f'{block_name} Z-score')
+                ylabel = 'Z-scored ΔF/F'  # Set ylabel for zscore
+            elif signal_type == 'dFF':
+                plt.plot(time_axis, peri_event_data['dFF'], label=f'{block_name} ΔF/F')
+                ylabel = r'$\Delta$F/F'  # Set ylabel for dFF
+            else:
+                print("Invalid signal_type. Use 'zscore' or 'dFF'.")
+                return
+
+        plt.axvline(0, color='black', linestyle='--', label='Event onset')
+        plt.xlabel('Time (s)')
+        plt.ylabel(ylabel)  
+        plt.title(f'Peri-Event Time Histogram (PETH) for First Event Across All Blocks ({signal_type})')
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_mean_peth(self, signal_type='zscore', error_type='sem'):
+        """
+        Plots the mean and either SEM or Std of the peri-event time histogram (PETH) for the first event across all blocks.
+
+        Parameters:
+        signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
+        error_type (str): The type of error to plot. Options are 'sem' for Standard Error of the Mean or 'std' for Standard Deviation.
+
+        Returns:
+        None. Displays the mean PETH plot with SEM or Std shaded area.
+        """
+        # Ensure that peri-event data for all blocks is already computed
+        if not hasattr(self, 'peri_event_data_all_blocks'):
+            print("No peri-event data found. Please compute PETH first using compute_first_event_peth_all_blocks.")
+            return
+
+        # Collect all the peri-event traces
+        all_traces = []
+        time_axis = []
+
+        # Loop through each block and collect the peri-event data
+        for block_name, peri_event_data in self.peri_event_data_all_blocks.items():
+            if signal_type == 'zscore':
+                all_traces.append(peri_event_data['zscore'])
+                ylabel = 'Z-scored ΔF/F'
+            elif signal_type == 'dFF':
+                all_traces.append(peri_event_data['dFF'])
+                ylabel = r'$\Delta$F/F'
+            else:
+                print("Invalid signal_type. Use 'zscore' or 'dFF'.")
+                return
+
+            time_axis = peri_event_data['time_axis']
+
+        # Find the minimum trace length to truncate all traces to the same length
+        min_length = min([len(trace) for trace in all_traces])
+
+        # Truncate all traces to the same length (the shortest one)
+        all_traces = np.array([trace[:min_length] for trace in all_traces])
+
+        # Also truncate the time axis to match the trace length
+        time_axis = time_axis[:min_length]
+
+        # Calculate the mean across all traces
+        mean_trace = np.mean(all_traces, axis=0)
+
+        # Calculate SEM or Std across all traces depending on the selected error type
+        if error_type == 'sem':
+            error_trace = np.std(all_traces, axis=0) / np.sqrt(len(all_traces))  # SEM
+            error_label = 'SEM'
+        elif error_type == 'std':
+            error_trace = np.std(all_traces, axis=0)  # Standard Deviation
+            error_label = 'Std'
+        else:
+            print("Invalid error_type. Use 'sem' or 'std'.")
+            return
+
+        # Plot the mean trace with SEM or Std shading
+        plt.figure(figsize=(12, 6))
+        plt.plot(time_axis, mean_trace, color='blue', label=f'Mean {signal_type}')
+        plt.fill_between(time_axis, mean_trace - error_trace, mean_trace + error_trace, color='blue', alpha=0.3, label=error_label)
+
+        # Plot event onset line
+        plt.axvline(0, color='black', linestyle='--', label='Event onset')
+        
+        # Add labels and titles
+        plt.xlabel('Time (s)')
+        plt.ylabel(ylabel)
+        plt.title(f'Mean Peri-Event Time Histogram (PETH) with {error_label} ({signal_type})')
+        
+        # Add legend and display plot
+        plt.legend()
+        plt.tight_layout()
         plt.show()

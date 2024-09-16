@@ -114,6 +114,42 @@ def hc_plot_behavior_event(self, behavior_name='all', plot_type='dFF', ax=None):
     if ax is None:
         plt.show()
 
+def hc_plot_individual_behavior(self, behavior_name='all', plot_type='dFF', figsize=(18, 5)):
+    """
+    Plots the specified behavior and y-axis signal type for each processed block in the Home Cage experiment.
+    
+    Parameters:
+    - behavior_name: The name of the behavior to plot.
+    - plot_type: The type of signal to plot ('dFF', 'zscore').
+    - figsize: The size of the figure.
+    """
+    # Determine the number of rows based on the number of blocks
+    rows = len(self.blocks)
+    figsize = (figsize[0], figsize[1] * rows)
+
+    # Initialize the figure with the calculated size and adjust font size
+    fig, axs = plt.subplots(rows, 1, figsize=figsize)
+    axs = axs.flatten()
+    plt.rcParams.update({'font.size': 16})
+
+    # Loop over each block and plot
+    for i, (block_folder, tdt_data_obj) in enumerate(self.blocks.items()):
+        # Plot the behavior event using the hc_plot_behavior_event method
+        if i == 0:
+            # For the first plot, include the legend
+            tdt_data_obj.hc_plot_behavior_event(behavior_name=behavior_name, plot_type=plot_type, ax=axs[i])
+        else:
+            # For the other plots, skip the legend
+            tdt_data_obj.hc_plot_behavior_event(behavior_name=behavior_name, plot_type=plot_type, ax=axs[i])
+            axs[i].get_legend().remove()
+
+        subject_name = tdt_data_obj.subject_name
+        axs[i].set_title(f'{subject_name}: {plot_type.capitalize()} Signal with {behavior_name.capitalize()} Bouts' if behavior_name != 'all' else f'{subject_name}: {plot_type.capitalize()} Signal with All Bouts', fontsize=18)
+
+    plt.tight_layout()
+    plt.show()
+
+
 
 def hc_extract_intruder_bouts(self, csv_base_path):
     """

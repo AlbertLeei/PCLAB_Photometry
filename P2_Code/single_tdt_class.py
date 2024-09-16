@@ -900,37 +900,40 @@ class TDTData:
             self.behaviors[behavior_event].Total_Duration = (behavior_offsets[valid_indices] - behavior_onsets[valid_indices]).tolist()  # Update Total Duration
 
 
-#******************************PSTHS**************************************
-    def generate_first_event_peth(self, event_name, pre_time=5, post_time=5, bin_size=0.1):
+#******************************PETHS**************************************
+    def compute_1st_event_peth(self, behavior_name, pre_time=5, post_time=5, bin_size=0.1):
         """
-        Generates a peri-event time histogram (PETH) for the first occurrence of a given event in each block.
+        Computes the peri-event time histogram (PETH) data for the first occurrence of a given event in each block.
+        Stores the peri-event data (custom zscore, dFF, and time axis) as a class variable.
+
+        Z-score is calculated using the pre-time window as the baseline.
 
         Parameters:
-        event_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
+        behavior_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
         pre_time (float): The time in seconds to include before the event.
         post_time (float): The time in seconds to include after the event.
         bin_size (float): The size of each bin in the histogram (in seconds).
 
         Returns:
-        None. Displays the PETH plot.
+        None. Stores peri-event data as a class variable.
         """
-        if event_name not in self.behaviors:
-            print(f"Event {event_name} not found in behaviors.")
+        if behavior_name not in self.behaviors:
+            print(f"Event {behavior_name} not found in behaviors.")
             return
-        
-        # Ensure z-score is computed
-        if self.zscore is None:
-            self.compute_zscore()
 
+        # Ensure ΔF/F is computed (we will calculate the z-score manually using the pre-time as baseline)
+        if self.dFF is None:
+            self.compute_dFF()
+        
+        self.dFF = np.array(self.dFF)
+        
         # Extract the first onset of the event from the behaviors
-        event_onsets = self.behaviors[event_name].onset
+        event_onsets = self.behaviors[behavior_name].onset
         if len(event_onsets) == 0:
-            print(f"No occurrences of {event_name} found.")
+            print(f"No occurrences of {behavior_name} found.")
             return
 
         first_event_onset = event_onsets[0]  # Get the first occurrence
-
-        num_bins = int((pre_time + post_time) / bin_size)
 
         # Find the peri-event window around the first event
         start_time = first_event_onset - pre_time
@@ -944,20 +947,70 @@ class TDTData:
             print("First event is too close to the edge of the recording, skipping.")
             return
 
-        # Extract the z-scored ΔF/F values for this peri-event window
-        self.zscore = np.array(self.zscore)
-        peri_event_data = self.zscore[start_idx:end_idx]
+        # Define the baseline window for z-score calculation (from pre-time to the event onset)
+        baseline_end_idx = np.searchsorted(self.timestamps, first_event_onset)
+        baseline_dff = self.dFF[start_idx:baseline_end_idx]  # ΔF/F values during the baseline period
+
+        # Calculate the mean and standard deviation for the baseline period
+        baseline_mean = np.mean(baseline_dff)
+        baseline_std = np.std(baseline_dff)
+
+        if baseline_std == 0:
+            print("Baseline standard deviation is 0. Cannot compute z-score.")
+            return
+
+        # Extract the ΔF/F values for the peri-event window
+        peri_event_dff = self.dFF[start_idx:end_idx]
+
+        # Calculate z-score using the baseline mean and std
+        peri_event_zscore = (peri_event_dff - baseline_mean) / baseline_std
 
         # Generate time axis for the peri-event window
-        time_axis = np.linspace(-pre_time, post_time, len(peri_event_data))
+        time_axis = np.linspace(-pre_time, post_time, len(peri_event_zscore))
 
-        # Plot the PETH
+        # Store both peri-event zscore, dFF, and time axis in a class variable dictionary
+        self.peri_event_data = {
+            'zscore': peri_event_zscore,
+            'dFF': peri_event_dff,
+            'time_axis': time_axis
+        }
+
+    
+
+    def plot_1st_event_peth(self, signal_type='zscore'):
+        """
+        Plots the peri-event time histogram (PETH) based on the previously computed data.
+
+        Parameters:
+        signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
+
+        Returns:
+        None. Displays the PETH plot.
+        """
+        # Ensure that peri-event data is already computed
+        if not hasattr(self, 'peri_event_data'):
+            print("No peri-event data found. Please compute PETH first using compute_first_event_peth.")
+            return
+
+        # Extract time axis and the desired signal type from the stored peri-event data
+        time_axis = self.peri_event_data['time_axis']
+        
         plt.figure(figsize=(10, 6))
-        plt.plot(time_axis, peri_event_data, color='blue', label=f'{event_name} Z-score')
-        plt.axvline(0, color='black', linestyle='--', label=f'{event_name} onset')
+        
+        if signal_type == 'zscore':
+            plt.plot(time_axis, self.peri_event_data['zscore'], color='blue', label='Z-score')
+            ylabel = 'Z-scored ΔF/F'
+        elif signal_type == 'dFF':
+            plt.plot(time_axis, self.peri_event_data['dFF'], color='green', label='ΔF/F')
+            ylabel = r'$\Delta$F/F'
+        else:
+            print("Invalid signal_type. Use 'zscore' or 'dFF'.")
+            return
+
+        plt.axvline(0, color='black', linestyle='--', label='Event onset')
         plt.xlabel('Time (s)')
-        plt.ylabel('Z-scored ΔF/F')
-        plt.title(f'Peri-Event Time Histogram (PETH) for First {event_name}')
+        plt.ylabel(ylabel)
+        plt.title('Peri-Event Time Histogram (PETH)')
         plt.legend()
         plt.tight_layout()
         plt.show()
