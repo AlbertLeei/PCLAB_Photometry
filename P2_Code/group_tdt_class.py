@@ -602,35 +602,58 @@ class GroupTDTData:
 
 
     '''********************************** PETHS **********************************'''
-    def compute_first_event_peth_all_blocks(self, behavior_name, pre_time=5, post_time=5, bin_size=0.1):
+    def compute_first_bout_peth_all_blocks(self, behavior_name='Investigation', bouts=None, pre_time=5, post_time=5, bin_size=0.1):
         """
-        Computes the peri-event time histogram (PETH) data for the first occurrence of a given event in each block.
-        Uses the TDTData class's PETH function and stores the peri-event data (zscore, dFF, and time axis) for each block
-        as a class variable.
+        Computes the peri-event time histogram (PETH) data for the first occurrence of a given event in each bout.
+        Uses the TDTData class's `compute_1st_bout_peth` function and stores the peri-event data (zscore, dFF, and time axis) 
+        for each bout as a class variable.
 
         Parameters:
         behavior_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
+        bouts (list): A list of bout names to process.
         pre_time (float): The time in seconds to include before the event.
         post_time (float): The time in seconds to include after the event.
         bin_size (float): The size of each bin in the histogram (in seconds).
 
         Returns:
-        None. Stores peri-event data for all blocks as a class variable.
+        None. Stores peri-event data for all blocks and bouts as a class variable.
         """
-        self.peri_event_data_all_blocks = {}  # Initialize a dictionary to store PETH data for each block
+        if bouts is None:
+            bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']  # Default to these bouts if none provided
+
+        self.peri_event_data_all_blocks = {}  # Initialize a dictionary to store PETH data for each bout
+
+        # Track the shortest time axis across all blocks and bouts
+        min_time_length = float('inf')
 
         # Loop through each block in self.blocks
         for block_name, block_data in self.blocks.items():
-            # Ensure that the TDTData class has the function to compute peri-event data
-            block_data.compute_1st_event_peth(behavior_name=behavior_name, pre_time=pre_time, post_time=post_time, bin_size=bin_size)
+            self.peri_event_data_all_blocks[block_name] = {}  # Initialize PETH storage for each block
 
-            # Extract the peri-event data (assumed to be stored in block_data.peri_event_data after the method is called)
-            if hasattr(block_data, 'peri_event_data'):
-                self.peri_event_data_all_blocks[block_name] = block_data.peri_event_data
-            else:
-                print(f"No peri-event data found for {block_name} after calling generate_first_event_peth.")
+            # Loop through each bout in the specified bouts
+            for bout in bouts:
+                if bout in block_data.bout_dict and behavior_name in block_data.bout_dict[bout]:
+                    # Use the `compute_1st_bout_peth` method to compute the PETH for the first event in the bout
+                    block_data.compute_1st_bout_peth(bout_name=bout, behavior_name=behavior_name, pre_time=pre_time, post_time=post_time, bin_size=bin_size)
 
+                    # Extract and store the peri-event data (assumed to be stored in block_data.peri_event_data)
+                    if hasattr(block_data, 'peri_event_data'):
+                        self.peri_event_data_all_blocks[block_name][bout] = block_data.peri_event_data
 
+                        # Check the time axis length to find the shortest one
+                        time_axis = block_data.peri_event_data['time_axis']
+                        if len(time_axis) < min_time_length:
+                            min_time_length = len(time_axis)
+                    else:
+                        print(f"No peri-event data found for {block_name}, {bout}.")
+                else:
+                    print(f"No {behavior_name} found in {bout} for {block_name}.")
+
+        # Truncate all traces to the shortest time axis length to ensure consistency
+        for block_name, bout_data in self.peri_event_data_all_blocks.items():
+            for bout, peri_event_data in bout_data.items():
+                for key in ['zscore', 'dFF', 'time_axis']:  # Truncate zscore, dFF, and time_axis
+                    peri_event_data[key] = peri_event_data[key][:min_time_length]
 
 
     def plot_1st_event_peth_all_traces(self, signal_type='zscore'):
@@ -672,8 +695,79 @@ class GroupTDTData:
         plt.tight_layout()
         plt.show()
 
+    def compute_first_bout_peth_all_blocks_standard(self, behavior_name='Investigation', bouts=None, pre_time=5, post_time=5, bin_size=0.1):
+        """
+        Computes the peri-event time histogram (PETH) data for the first occurrence of a given event in each bout.
+        This version uses standard z-scoring based on the whole trace, using precomputed `self.zscore` data.
 
-    def plot_mean_peth(self, signal_type='zscore', error_type='sem'):
+        Parameters:
+        behavior_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
+        bouts (list): A list of bout names to process.
+        pre_time (float): The time in seconds to include before the event.
+        post_time (float): The time in seconds to include after the event.
+        bin_size (float): The size of each bin in the histogram (in seconds).
+
+        Returns:
+        None. Stores peri-event data for all blocks and bouts as a class variable.
+        """
+        if bouts is None:
+            bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']  # Default to these bouts if none provided
+
+        self.peri_event_data_all_blocks = {}  # Initialize a dictionary to store PETH data for each bout
+
+        # Track the shortest time axis across all blocks and bouts
+        min_time_length = float('inf')
+
+        # Loop through each block in self.blocks
+        for block_name, block_data in self.blocks.items():
+            self.peri_event_data_all_blocks[block_name] = {}  # Initialize PETH storage for each block
+
+            # Loop through each bout in the specified bouts
+            for bout in bouts:
+                if bout in block_data.bout_dict and behavior_name in block_data.bout_dict[bout]:
+                    # Extract the first occurrence of the behavior
+                    behavior_events = block_data.bout_dict[bout][behavior_name]
+                    if len(behavior_events) == 0:
+                        print(f"No occurrences of {behavior_name} found in {bout} for {block_name}.")
+                        continue
+
+                    first_event = behavior_events[0]
+                    event_time = first_event['Start Time']
+
+                    # Define the peri-event window
+                    start_time = event_time - pre_time
+                    end_time = event_time + post_time
+
+                    start_idx = np.searchsorted(block_data.timestamps, start_time)
+                    end_idx = np.searchsorted(block_data.timestamps, end_time)
+
+                    # Extract z-score data from the entire trace for this peri-event window
+                    peri_event_zscore = block_data.zscore[start_idx:end_idx]
+
+                    # Generate the time axis for the peri-event window
+                    time_axis = np.linspace(-pre_time, post_time, len(peri_event_zscore))
+
+                    # Store both peri-event zscore and time axis in the class variable dictionary
+                    self.peri_event_data_all_blocks[block_name][bout] = {
+                        'zscore': peri_event_zscore,
+                        'time_axis': time_axis
+                    }
+
+                    # Check the time axis length to find the shortest one
+                    if len(time_axis) < min_time_length:
+                        min_time_length = len(time_axis)
+                else:
+                    print(f"No {behavior_name} found in {bout} for {block_name}.")
+
+        # Truncate all traces to the shortest time axis length to ensure consistency
+        for block_name, bout_data in self.peri_event_data_all_blocks.items():
+            for bout, peri_event_data in bout_data.items():
+                peri_event_data['zscore'] = peri_event_data['zscore'][:min_time_length]
+                peri_event_data['time_axis'] = peri_event_data['time_axis'][:min_time_length]
+
+
+
+    def plot_mean_peth(self, signal_type='zscore', error_type='sem', title= 'NA'):
         """
         Plots the mean and either SEM or Std of the peri-event time histogram (PETH) for the first event across all blocks.
 
@@ -741,9 +835,85 @@ class GroupTDTData:
         # Add labels and titles
         plt.xlabel('Time (s)')
         plt.ylabel(ylabel)
-        plt.title(f'Mean Peri-Event Time Histogram (PETH) with {error_label} ({signal_type})')
+        plt.title(title)
         
         # Add legend and display plot
         plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+
+
+    def plot_peth_for_bouts(self, signal_type='zscore', error_type='sem', bouts=None, title='PETH for First Investigation Across Agents'):
+        """
+        Plots the mean and SEM/Std of the peri-event time histogram (PETH) for the first event across all bouts.
+
+        Parameters:
+        signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
+        error_type (str): The type of error to plot. Options are 'sem' for Standard Error of the Mean or 'std' for Standard Deviation.
+        bouts (list): A list of bout names to plot. If None, uses default ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1'].
+        title (str): Title for the entire figure.
+
+        Returns:
+        None. Displays the mean PETH plot for each bout with SEM/Std shaded area.
+        """
+        if bouts is None:
+            bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']
+
+        fig, axes = plt.subplots(1, len(bouts), figsize=(15, 5), sharey=True)  # Adjusted width of the figure
+
+        for i, bout in enumerate(bouts):
+            ax = axes[i]  # Get the subplot for this bout
+
+            all_traces = []  # To store all traces across blocks for this bout
+            time_axis = []  # Will be set later when available
+
+            # Collect the peri-event data for the bout across all blocks
+            for block_name, peth_data_block in self.peri_event_data_all_blocks.items():
+                if bout in peth_data_block:
+                    # Extract the relevant PETH data (zscore or dFF)
+                    peri_event_data = peth_data_block[bout]
+                    signal_data = peri_event_data[signal_type]
+                    time_axis = peri_event_data['time_axis']
+
+                    # Store the signal data for averaging later
+                    all_traces.append(signal_data)
+
+            # Convert list of traces to numpy array for easier manipulation
+            all_traces = np.array(all_traces)
+
+            # Find the minimum trace length and truncate all traces to the same length
+            min_length = min([len(trace) for trace in all_traces])
+            all_traces = np.array([trace[:min_length] for trace in all_traces])
+            time_axis = time_axis[:min_length]  # Truncate time axis as well
+
+            # Calculate the mean across all traces
+            mean_trace = np.mean(all_traces, axis=0)
+
+            # Calculate SEM or Std across all traces depending on the selected error type
+            if error_type == 'sem':
+                error_trace = np.std(all_traces, axis=0) / np.sqrt(len(all_traces))  # SEM
+                error_label = 'SEM'
+            elif error_type == 'std':
+                error_trace = np.std(all_traces, axis=0)  # Standard Deviation
+                error_label = 'Std'
+
+            # Plot the mean trace with SEM/Std shaded area  #FFAF00
+            ax.plot(time_axis, mean_trace, color='#00B7D7', label=f'Mean {signal_type.capitalize()}', linewidth=1.5)  # Increased line width
+            ax.fill_between(time_axis, mean_trace - error_trace, mean_trace + error_trace, color='#00B7D7', alpha=0.3, label=error_label)
+
+            # Plot event onset line
+            ax.axvline(0, color='black', linestyle='--', label='Event onset')
+
+            # Set the title and axis labels with larger fonts
+            ax.set_title(bout.replace('_', ' '), fontsize=14)
+            ax.set_xlabel('Time (s)', fontsize=12)
+
+            # Remove the right and top spines for each subplot
+            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False)
+
+        axes[0].set_ylabel(f'{signal_type.capitalize()} dFF', fontsize=12)  # Set shared y-label for all subplots
+        plt.suptitle(title, fontsize=16)
         plt.tight_layout()
         plt.show()

@@ -975,7 +975,97 @@ class TDTData:
             'time_axis': time_axis
         }
 
-    
+    def compute_1st_bout_peth(self, bout_name, behavior_name, pre_time=5, post_time=5, bin_size=0.1):
+        """
+        Computes the peri-event time histogram (PETH) data for the first occurrence of a given behavior in a specified bout.
+        Uses the behavior event start time to calculate the peri-event window.
+        
+        Z-score is calculated using the pre-time window as the baseline.
+
+        Parameters:
+        bout_name (str): The name of the bout (e.g., 'Short_Term_1') in which to find the behavior.
+        behavior_name (str): The name of the behavior (e.g., 'Investigation') to compute the PETH for.
+        pre_time (float): The time in seconds to include before the behavior starts.
+        post_time (float): The time in seconds to include after the behavior starts.
+        bin_size (float): The size of each bin in the histogram (in seconds).
+
+        Returns:
+        None. Stores peri-event data as a class variable.
+        """
+        if bout_name not in self.bout_dict:
+            print(f"Bout {bout_name} not found.")
+            return
+
+        if behavior_name not in self.bout_dict[bout_name]:
+            print(f"Behavior {behavior_name} not found in {bout_name}.")
+            return
+
+        # Ensure ΔF/F is computed (we will calculate the z-score manually using the pre-time as baseline)
+        if self.dFF is None:
+            self.compute_dFF()
+
+        # Extract the first event (behavior) within the specified bout
+        behavior_events = self.bout_dict[bout_name][behavior_name]
+        if len(behavior_events) == 0:
+            print(f"No occurrences of {behavior_name} found in {bout_name}.")
+            return
+
+        first_event = behavior_events[0]
+        event_time = first_event['Start Time']  # Get the start time of the first event
+
+        # Find the peri-event window around the first behavior event
+        start_time = event_time - pre_time
+        end_time = event_time + post_time
+
+        start_idx = np.searchsorted(self.timestamps, start_time)
+        end_idx = np.searchsorted(self.timestamps, end_time)
+
+        # Handle cases where the event is too close to the start or end of the recording by padding
+        pad_start, pad_end = 0, 0
+
+        if start_idx < 0:
+            pad_start = abs(start_idx)  # Padding at the start
+            start_idx = 0
+        if end_idx >= len(self.timestamps):
+            pad_end = end_idx - len(self.timestamps) + 1  # Padding at the end
+            end_idx = len(self.timestamps)
+
+        # Define the baseline window for z-score calculation (from pre-time to the event start)
+        baseline_end_idx = np.searchsorted(self.timestamps, event_time)
+        baseline_dff = self.dFF[start_idx:baseline_end_idx]  # ΔF/F values during the baseline period
+
+        # Calculate the mean and standard deviation for the baseline period
+        baseline_mean = np.mean(baseline_dff)
+        baseline_std = np.std(baseline_dff)
+
+        if baseline_std == 0:
+            print("Baseline standard deviation is 0. Cannot compute z-score.")
+            return
+
+        # Extract the ΔF/F values for the peri-event window
+        peri_event_dff = self.dFF[start_idx:end_idx]
+
+        # Calculate z-score using the baseline mean and std
+        peri_event_zscore = (peri_event_dff - baseline_mean) / baseline_std
+
+        # Apply padding if necessary
+        if pad_start > 0:
+            peri_event_zscore = np.pad(peri_event_zscore, (pad_start, 0), mode='constant', constant_values=np.nan)
+        if pad_end > 0:
+            peri_event_zscore = np.pad(peri_event_zscore, (0, pad_end), mode='constant', constant_values=np.nan)
+
+        # Generate the time axis for the peri-event window with padding applied
+        time_axis = np.linspace(-pre_time, post_time, len(peri_event_zscore))
+
+        # Store both peri-event zscore, dFF, and time axis in a class variable dictionary
+        self.peri_event_data = {
+            'zscore': peri_event_zscore,
+            'dFF': peri_event_dff,
+            'time_axis': time_axis
+        }
+
+        # print(f"Peri-event data for {behavior_name} in {bout_name} computed and stored.")
+
 
     def plot_1st_event_peth(self, signal_type='zscore'):
         """

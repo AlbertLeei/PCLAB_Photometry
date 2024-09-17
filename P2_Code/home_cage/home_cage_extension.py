@@ -197,10 +197,13 @@ def hc_extract_intruder_bouts(self, csv_base_path):
         # self.compute_zscore(method='baseline', baseline_start=self.timestamps[0], baseline_end=baseline_end_time)
 
 
-def hc_find_behavior_events_in_bout(self):
+def hc_find_behavior_events_in_bout(self, verbose=False):
     """
     Finds all behavior events within each bout defined by Short Term, Novel, and Long Term introduced and removed.
     For each event found, returns the start time, end time, total duration, and mean z-score during the event.
+
+    Parameters:
+    - verbose (bool): If True, prints out debugging information about the processing steps.
 
     Returns:
     - bout_dict (dict): Dictionary where each key is the bout number (starting from 1), and the value contains 
@@ -215,7 +218,10 @@ def hc_find_behavior_events_in_bout(self):
     # Extract behavior events
     behavior_events = self.behaviors
 
-    # Function to process a bout (sub-function within this function to avoid repetition)
+    if verbose:
+        print(f"Behavior events found: {list(behavior_events.keys())}")
+
+    # Function to process a bout
     def process_bout(bout_key, start_time, end_time):
         bout_dict[bout_key] = {}
 
@@ -226,18 +232,31 @@ def hc_find_behavior_events_in_bout(self):
             behavior_onsets = np.array(behavior_data.onset)
             behavior_offsets = np.array(behavior_data.offset)
 
+            if len(behavior_onsets) == 0 or len(behavior_offsets) == 0:
+                if verbose:
+                    print(f"Skipping {behavior_name} in {bout_key} due to empty onset or offset")
+                continue  # Skip if no events for this behavior
+
             # Find events that start and end within the bout
             within_bout = (behavior_onsets >= start_time) & (behavior_offsets <= end_time)
 
             # If any events are found in this bout, process them
             if np.any(within_bout):
+                if verbose:
+                    print(f"Processing {behavior_name} in {bout_key}: {np.sum(within_bout)} events found")
+
                 for onset, offset in zip(behavior_onsets[within_bout], behavior_offsets[within_bout]):
                     # Calculate total duration of the event
                     duration = offset - onset
 
                     # Find the z-score during this event
                     zscore_indices = (self.timestamps >= onset) & (self.timestamps <= offset)
-                    mean_zscore = np.mean(self.zscore[zscore_indices])
+
+                    # Ensure there are z-score values in the specified range before computing the mean
+                    if len(self.zscore[zscore_indices]) > 0:
+                        mean_zscore = np.mean(self.zscore[zscore_indices])
+                    else:
+                        mean_zscore = np.nan  # Assign NaN if no valid z-score data is available
 
                     # Store the details in the dictionary
                     event_dict = {
@@ -248,6 +267,10 @@ def hc_find_behavior_events_in_bout(self):
                     }
 
                     bout_dict[bout_key][behavior_name].append(event_dict)
+
+            else:
+                if verbose:
+                    print(f"No {behavior_name} events found within {bout_key} between {start_time} and {end_time}")
 
     # Iterate through each bout defined by Short Term introduced and removed
     for i, (start_time, end_time) in enumerate(zip(self.short_term_events['introduced'], self.short_term_events['removed']), start=1):
@@ -264,7 +287,11 @@ def hc_find_behavior_events_in_bout(self):
         bout_key = f'Long_Term_{i}'
         process_bout(bout_key, start_time, end_time)
 
+    if verbose:
+        print(f"Bouts processed: {list(bout_dict.keys())}")
+
     self.bout_dict = bout_dict
+
 
 
 
