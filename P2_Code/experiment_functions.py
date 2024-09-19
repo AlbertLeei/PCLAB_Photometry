@@ -8,7 +8,7 @@ from scipy.optimize import curve_fit
 # These functions are used for all experiments
 custom_palette = ['#FF9F1C', '#0077B6', '#D1E8E2', '#55A630', '#E07A5F', '#FFADAD', '#2C2C54', '#792910']
 
-def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colors=custom_palette, custom_xtick_labels=None, ylim=None):
+def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colors=custom_palette, custom_xtick_labels=None, ylim=None, bar_color='#00B7D7'):
     """
     Plots the mean values during investigations or other events across bouts with error bars for SEM
     and individual subject lines connecting the bouts.
@@ -22,6 +22,7 @@ def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colo
     - colors (list): A list of colors to use for individual subject lines and markers.
     - custom_xtick_labels (list): A list of custom x-tick labels. If not provided, defaults to the column names.
     - ylim (tuple): A tuple (min, max) to set the y-axis limits. If None, the limits are set automatically based on the data.
+    - bar_colors (str or list): A color or list of colors to use for the bars. Defaults to '#00B7D7'.
     """
 
     # Calculate the mean and SEM for each bout (across all subjects)
@@ -37,7 +38,7 @@ def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colo
         mean_values, 
         yerr=sem_values, 
         capsize=6,  # Increase capsize for larger error bars
-        color='#00B7D7',  # Use cyan for bars  #FFAF00
+        color=bar_color,  # Custom bar colors
         edgecolor='black', 
         linewidth=2,  # Thicker and darker bar outlines
         width=0.6,
@@ -106,7 +107,7 @@ def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colo
     plt.show()
 
 
-def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None):
+def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7'):
     """
     Plots the mean values during investigations or other events across bouts with error bars for SEM
     and individual subject lines connecting the bouts. All subjects are plotted in gray.
@@ -119,6 +120,7 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
     - ylabel (str): The label for the y-axis.
     - custom_xtick_labels (list): A list of custom x-tick labels. If not provided, defaults to the column names.
     - ylim (tuple): A tuple (min, max) to set the y-axis limits. If None, the limits are set automatically based on the data.
+    - bar_color (str): The color to use for the bars (default is cyan).
     """
 
     # Calculate the mean and SEM for each bout (across all subjects)
@@ -134,7 +136,7 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
         mean_values, 
         yerr=sem_values, 
         capsize=6,  # Increase capsize for larger error bars
-        color='#00B7D7',  # Use cyan for bars  #FFAF00
+        color=bar_color,  # Customizable bar color
         edgecolor='black', 
         linewidth=2,  # Thicker and darker bar outlines
         width=0.6,
@@ -192,9 +194,6 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
     # Display the plot without legend
     plt.tight_layout()
     plt.show()
-
-
-
 
 
 

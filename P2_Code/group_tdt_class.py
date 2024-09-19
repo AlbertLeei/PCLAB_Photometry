@@ -33,6 +33,7 @@ class GroupTDTData:
     from hab_dishab.hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior
     # from P2_Code.social_pref. import 
     from home_cage.home_cage_extension import hc_processing, hc_plot_individual_behavior
+    from social_pref.social_pref_extension import sp_processing, sp_compute_first_bout_peth_all_blocks
 
 
     def load_blocks(self):
@@ -844,7 +845,7 @@ class GroupTDTData:
 
 
 
-    def plot_peth_for_bouts(self, signal_type='zscore', error_type='sem', bouts=None, title='PETH for First Investigation Across Agents'):
+    def plot_peth_for_bouts(self, signal_type='zscore', error_type='sem', bouts=None, title='PETH for First Investigation Across Agents', color='#00B7D7', custom_xtick_labels=None):
         """
         Plots the mean and SEM/Std of the peri-event time histogram (PETH) for the first event across all bouts.
 
@@ -853,6 +854,8 @@ class GroupTDTData:
         error_type (str): The type of error to plot. Options are 'sem' for Standard Error of the Mean or 'std' for Standard Deviation.
         bouts (list): A list of bout names to plot. If None, uses default ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1'].
         title (str): Title for the entire figure.
+        color (str): Color for both the trace line and the error area (default is cyan '#00B7D7').
+        custom_xtick_labels (list): Custom labels for the x-ticks across all subplots. If None, defaults to bout names.
 
         Returns:
         None. Displays the mean PETH plot for each bout with SEM/Std shaded area.
@@ -898,15 +901,19 @@ class GroupTDTData:
                 error_trace = np.std(all_traces, axis=0)  # Standard Deviation
                 error_label = 'Std'
 
-            # Plot the mean trace with SEM/Std shaded area  #FFAF00
-            ax.plot(time_axis, mean_trace, color='#00B7D7', label=f'Mean {signal_type.capitalize()}', linewidth=1.5)  # Increased line width
-            ax.fill_between(time_axis, mean_trace - error_trace, mean_trace + error_trace, color='#00B7D7', alpha=0.3, label=error_label)
+            # Plot the mean trace with SEM/Std shaded area, with customizable color
+            ax.plot(time_axis, mean_trace, color=color, label=f'Mean {signal_type.capitalize()}', linewidth=1.5)  # Trace color
+            ax.fill_between(time_axis, mean_trace - error_trace, mean_trace + error_trace, color=color, alpha=0.3, label=error_label)  # Error color
 
             # Plot event onset line
             ax.axvline(0, color='black', linestyle='--', label='Event onset')
 
-            # Set the title and axis labels with larger fonts
-            ax.set_title(bout.replace('_', ' '), fontsize=14)
+            # Set the title for each bout
+            if custom_xtick_labels is not None and i < len(custom_xtick_labels):
+                ax.set_title(custom_xtick_labels[i], fontsize=14)
+            else:
+                ax.set_title(bout.replace('_', ' '), fontsize=14)
+
             ax.set_xlabel('Time (s)', fontsize=12)
 
             # Remove the right and top spines for each subplot
@@ -917,3 +924,4 @@ class GroupTDTData:
         plt.suptitle(title, fontsize=16)
         plt.tight_layout()
         plt.show()
+

@@ -2,13 +2,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import scipy.stats as stats
-
 
 '''********************************** FOR SINGLE OBJECT  **********************************'''
 def hc_plot_behavior_event(self, behavior_name='all', plot_type='dFF', ax=None):
     """
-    Plots Delta F/F (dFF) or z-scored signal with behavior events for the new habituation-context experiment.
+    Plots Delta F/F (dFF) or z-scored signal with behavior events for the home cage experiment.
 
     Parameters:
     - behavior_name (str): The name of the behavior to plot. Use 'all' to plot all behaviors.
@@ -191,8 +189,10 @@ def hc_extract_intruder_bouts(self, csv_base_path):
     self.long_term_events = long_term_events
 
     # Compute z-score with baseline being from initial artifact removal to the first Short_Term_Introduced event
+    # If commented out, it computes standard zscore
     if short_term_events['introduced']:
         baseline_end_time = short_term_events['introduced'][0]
+
         self.compute_zscore()
         # self.compute_zscore(method='baseline', baseline_start=self.timestamps[0], baseline_end=baseline_end_time)
 

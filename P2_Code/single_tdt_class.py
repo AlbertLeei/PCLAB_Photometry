@@ -67,7 +67,8 @@ class TDTData:
 
     from hab_dishab.hab_dishab_extension import hab_dishab_plot_behavior_event, hab_dishab_extract_intruder_bouts, hab_dishab_find_behavior_events_in_bout 
     from home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout
-    '''********************************** PRINTING INFO **********************************'''
+    from social_pref.social_pref_extension import sp_extract_intruder_events, sp_plot_behavior_event, sp_remove_time_around_subject_introduced
+
     def print_behaviors(self):
         """
         Prints all behavior names in self.behaviors.
@@ -80,16 +81,21 @@ class TDTData:
                 print(behavior_name)
 
     '''********************************** PREPROCESSING **********************************'''
+
+
     def remove_initial_LED_artifact(self, t=30):
-        '''
-        This function removes the initial artifact caused by the onset of LEDs turning on.
-        The artifact is assumed to occur within the first 't' seconds of the data.
-        '''
         ind = np.where(self.timestamps > t)[0][0]
+        
+        # Debugging: Print before removing the artifact
+        # print(f"Before removing LED artifact: Timestamps range from {self.timestamps[0]} to {self.timestamps[-1]}")
+
         for stream_name in ['DA', 'ISOS']:
             if stream_name in self.streams:
                 self.streams[stream_name] = self.streams[stream_name][ind:]
         self.timestamps = self.timestamps[ind:]
+
+        # Debugging: Print after removing the artifact
+        # print(f"After removing LED artifact: Timestamps range from {self.timestamps[0]} to {self.timestamps[-1]}")
 
         # Clear dFF and zscore since the raw data has changed
         self.dFF = None
@@ -114,14 +120,13 @@ class TDTData:
         self.zscore = None
 
     def verify_signal(self):
-        """
-        Verifies that all streams (DA and ISOS) have the same length by trimming them to the shortest length.
-        This function also adjusts the timestamps accordingly. No smoothing is applied.
-        """
         da_length = len(self.streams[self.DA])
         isos_length = len(self.streams[self.ISOS])
         min_length = min(da_length, isos_length)
         
+        # Debugging: Print signal lengths before trimming
+        # print(f"Before verifying signal: DA length = {da_length}, ISOS length = {isos_length}")
+
         if da_length != min_length or isos_length != min_length:
             # Trim the streams to the shortest length
             self.streams[self.DA] = self.streams[self.DA][:min_length]
@@ -129,10 +134,10 @@ class TDTData:
             
             # Trim the timestamps to match the new signal length
             self.timestamps = self.timestamps[:min_length]
-            
-            # print(f"Signals trimmed to {min_length} samples to match the shortest signal.")
 
-        # Smooth signal function as a class method
+        # Debugging: Print signal lengths after trimming
+        # print(f"After verifying signal: DA length = {len(self.streams[self.DA])}, ISOS length = {len(self.streams[self.ISOS])}, Timestamps length = {len(self.timestamps)}")
+
     
     def smooth_and_apply(self, window_len=1):
         """Smooth both DA and ISOS signals using a window with requested size, and store them.
@@ -142,8 +147,6 @@ class TDTData:
 
         Args:
             window_len (int): The dimension of the smoothing window; should be an odd integer.
-            window (str): The type of window ('flat', 'hanning', 'hamming', 'bartlett', 'blackman').
-                        The 'flat' window produces a moving average smoothing.
 
         Sets:
             self.smoothed_DA: The smoothed and trimmed DA signal.
@@ -158,81 +161,40 @@ class TDTData:
                 raise ValueError("Input vector needs to be bigger than window size.")
             if window_len < 3:
                 return source
-            
+
             # Extend the signal by reflecting at the edges
             s = np.r_[source[window_len-1:0:-1], source, source[-2:-window_len-1:-1]]
-            
+
             # Create a window for smoothing (using a flat window here)
             w = np.ones(window_len, 'd')
-            
+
             # Convolve and return the smoothed signal
             return np.convolve(w / w.sum(), s, mode='valid')
-        
+
+        # Debugging: Print before smoothing
+        # print(f"Before smoothing: DA length = {len(self.streams['DA'])}, ISOS length = {len(self.streams['ISOS'])}")
+
         # Apply smoothing to DA and ISOS streams, then trim the excess padding
         if 'DA' in self.streams:
             smoothed_DA = smooth_signal(self.streams['DA'], window_len)
             # Trim the excess by slicing the array to match the original length
             self.smoothed_DA = smoothed_DA[window_len//2:-window_len//2+1]
-            # self.smoothed_DA = smoothed_DA[:len(self.timestamps)]  # Trim the smoothed signal to match timestamps
 
-        
+            # Debugging: Print after smoothing DA
+            # print(f"After smoothing DA: Smoothed length = {len(smoothed_DA)}, Trimmed length = {len(self.smoothed_DA)}")
+
         if 'ISOS' in self.streams:
             smoothed_ISOS = smooth_signal(self.streams['ISOS'], window_len)
             # Trim the excess by slicing the array to match the original length
             self.smoothed_ISOS = smoothed_ISOS[window_len//2:-window_len//2+1]
-            # self.smoothed_ISOS = smoothed_ISOS[:len(self.timestamps)]  # Trim the smoothed signal to match timestamps
 
-        
-        # print(f"Signals smoothed and trimmed with window length {window_len}.")
+            # Debugging: Print after smoothing ISOS
+            # print(f"After smoothing ISOS: Smoothed length = {len(smoothed_ISOS)}, Trimmed length = {len(self.smoothed_ISOS)}")
 
-    def apply_ma_baseline_correction(self):
-        """
-        Applies centered moving average (MA) to both DA and ISOS signals and performs baseline correction,
-        with an option to crop the time array.
+        # Debugging: Print final lengths of smoothed signals
+        # print(f"Final smoothed lengths: DA = {len(self.smoothed_DA)}, ISOS = {len(self.smoothed_ISOS)}")
 
-        Args:
-            window_len (int): The window size for the moving average filter.
-            crop_time (bool): Whether to crop the time array to match the cropped signal length.
-
-        Sets:
-            self.isosbestic_fc: The baseline correction for the isosbestic signal.
-            self.DA_fc: The baseline correction for the DA signal.
-            self.isosbestic_corrected: The baseline-corrected isosbestic signal.
-            self.DA_corrected: The baseline-corrected DA signal.
-        """
-        # Ensure the signals are smoothed first
-        window_len = int(self.fs) * 60
-        if self.smoothed_ISOS is None or self.smoothed_DA is None:
-            self.smooth_and_apply()  # Smooth the signals if not already done
-
-        def centered_moving_average(source, window):
-            """Helper function to apply centered moving average to the signal."""
-            source = np.array(source)
-            if len(source.shape) == 1:
-                cumsum = np.cumsum(source)
-                moving_avg = (cumsum[window:] - cumsum[:-window]) / float(window)
-                source = source[int(window / 2):-int(window / 2)]  # Crop the source signal
-                return source, moving_avg
-            else:
-                raise RuntimeError(f"The input array has too many dimensions. Input: {len(source.shape)}D, Required: 1D")
-
-        # Apply centered moving average to both DA and ISOS streams
-        cropped_ISOS, self.isosbestic_fc = centered_moving_average(self.smoothed_ISOS, window_len)
-        cropped_DA, self.DA_fc = centered_moving_average(self.smoothed_DA, window_len)
-
-        self.cropped_DA = cropped_DA
-        self.cropped_ISOS = cropped_ISOS
-
-        # Perform baseline correction on both signals
-        self.isosbestic_corrected = (cropped_ISOS - self.isosbestic_fc) / self.isosbestic_fc
-        self.DA_corrected = (cropped_DA - self.DA_fc) / self.DA_fc
  
-        # Crop the time array to match the cropped signal length
-        cropped_time = self.timestamps[int(window_len / 2):-int(window_len / 2)]
-        self.timestamps = cropped_time
-            
-        # print(f"Baseline correction applied using centered moving average with window length {window_len}.")
-
     def perform_standardization(self):
             """Standardizes the corrected signals (isosbestic and calcium).
 
@@ -340,6 +302,65 @@ class TDTData:
 
         # Print a message to indicate successful removal
         print(f"Removed time segment from {start_time}s to {end_time}s.")
+ 
+
+    def apply_ma_baseline_correction(self, window_len_seconds=30):
+        """
+        Applies centered moving average (MA) to both DA and ISOS signals and performs baseline correction,
+        with padding to avoid shortening the signals.
+
+        Args:
+            window_len_seconds (int): The window size in seconds for the moving average filter (default: 30 seconds).
+        """
+        # Adjust the window length in data points
+        window_len = int(self.fs) * window_len_seconds  # 30 seconds by default
+        if self.smoothed_ISOS is None or self.smoothed_DA is None:
+            self.smooth_and_apply()  # Smooth the signals if not already done
+
+        # Debugging: Print initial lengths
+        # print(f"Initial lengths - DA: {len(self.smoothed_DA)}, ISOS: {len(self.smoothed_ISOS)}, Timestamps: {len(self.timestamps)}")
+
+        # Apply centered moving average with padding to both DA and ISOS streams
+        self.isosbestic_fc = self.centered_moving_average_with_padding(self.smoothed_ISOS, window_len)
+        # print(self.cropped_ISOS)
+        self.DA_fc = self.centered_moving_average_with_padding(self.smoothed_DA, window_len)
+
+
+        self.isosbestic_corrected = (self.smoothed_ISOS - self.isosbestic_fc) / self.isosbestic_fc
+
+        # print(self.isosbestic_corrected)
+
+        self.DA_corrected = (self.smoothed_DA- self.DA_fc) / self.DA_fc
+
+        # Debugging: Print final lengths
+        # print(f"Final lengths after padding - DA: {len(self.DA_corrected)}, ISOS: {len(self.isosbestic_corrected)}, Timestamps: {len(self.timestamps)}"
+
+
+    def centered_moving_average_with_padding(self, source, window=1):
+        """
+        Applies a centered moving average to the input signal with edge padding to preserve the signal length.
+        
+        Args:
+            source (np.array): The signal for which the moving average is computed.
+            window (int): The window size used to compute the moving average.
+
+        Returns:
+            np.array: The centered moving average of the input signal with the original length preserved.
+        """
+        source = np.array(source)
+
+        if len(source.shape) == 1:
+            # Pad the signal by reflecting the edges to avoid cutting
+            padded_source = np.pad(source, (window // 2, window // 2), mode='reflect')
+
+            # Calculate the cumulative sum and moving average
+            cumsum = np.cumsum(padded_source)
+            moving_avg = (cumsum[window:] - cumsum[:-window]) / float(window)
+            
+            # Return the centered moving average with the original length preserved
+            return moving_avg[:len(source)]
+        else:
+            raise RuntimeError(f"Input array has too many dimensions. Input: {len(source.shape)}D, Required: 1D")
 
 
 
@@ -357,7 +378,7 @@ class TDTData:
         baseline_end (float): The end time of the baseline period for baseline z-score computation.
         """
         if self.dFF is None:
-            self.compute_dff()
+            self.compute_dFF()
         
         dff = np.array(self.dFF)
         
@@ -524,7 +545,7 @@ class TDTData:
         y_data = []
         if plot_type == 'dFF':
             if self.dFF is None:
-                self.compute_dff()
+                self.compute_dFF()
             y_data = self.dFF
             y_label = r'$\Delta$F/F'
             y_title = 'dFF Signal'
@@ -1003,6 +1024,7 @@ class TDTData:
         # Ensure ΔF/F is computed (we will calculate the z-score manually using the pre-time as baseline)
         if self.dFF is None:
             self.compute_dFF()
+        self.dFF = np.array(self.dFF)
 
         # Extract the first event (behavior) within the specified bout
         behavior_events = self.bout_dict[bout_name][behavior_name]
