@@ -1,9 +1,12 @@
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.stats import linregress
 from scipy.optimize import curve_fit
+
+
 
 # These functions are used for all experiments
 custom_palette = ['#FF9F1C', '#0077B6', '#D1E8E2', '#55A630', '#E07A5F', '#FFADAD', '#2C2C54', '#792910']
@@ -107,7 +110,7 @@ def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colo
     plt.show()
 
 
-def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7'):
+def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7', yticks_increment=None, xlabel = 'Agent'):
     """
     Plots the mean values during investigations or other events across bouts with error bars for SEM
     and individual subject lines connecting the bouts. All subjects are plotted in gray.
@@ -121,6 +124,7 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
     - custom_xtick_labels (list): A list of custom x-tick labels. If not provided, defaults to the column names.
     - ylim (tuple): A tuple (min, max) to set the y-axis limits. If None, the limits are set automatically based on the data.
     - bar_color (str): The color to use for the bars (default is cyan).
+    - yticks_increment (float): Increment amount for the y-axis ticks.
     """
 
     # Calculate the mean and SEM for each bout (across all subjects)
@@ -152,22 +156,129 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
         ax.scatter(df.columns, df.loc[subject], facecolors='none', edgecolors='gray', s=120, alpha=0.6, linewidth=2, zorder=2)
 
     # Add labels, title, and format
-    ax.set_ylabel(ylabel, fontsize=24)  # Larger y-axis label
-    ax.set_xlabel('Agent', fontsize=24, labelpad=12)
-    ax.set_title(title, fontsize=20)
+    ax.set_ylabel(ylabel, fontsize=30)  # Larger y-axis label
+    ax.set_xlabel(xlabel, fontsize=30, labelpad=12)
+    ax.set_title(title, fontsize=16)
 
     # Set x-ticks to match the bout labels
     ax.set_xticks(np.arange(len(df.columns)))
 
     # Use custom x-tick labels if provided, otherwise use the column names
     if custom_xtick_labels is not None:
-        ax.set_xticklabels(custom_xtick_labels, fontsize=16)
+        ax.set_xticklabels(custom_xtick_labels, fontsize=20)
     else:
-        ax.set_xticklabels(df.columns, fontsize=16)
+        ax.set_xticklabels(df.columns, fontsize=20)
 
     # Increase the font size of y-axis tick numbers
-    ax.tick_params(axis='y', labelsize=22)  # Increase y-axis number size
-    ax.tick_params(axis='x', labelsize=20)  # Optional: also increase x-axis number size
+    ax.tick_params(axis='y', labelsize=30)  # Increase y-axis number size
+    ax.tick_params(axis='x', labelsize=30)  # Optional: also increase x-axis number size
+
+    # Automatically set the y-limits based on the data range if ylim is not provided
+    if ylim is None:
+        # Collect all values to determine the y-limits
+        all_values = np.concatenate([df.values.flatten(), mean_values.values.flatten()])
+        min_val = np.nanmin(all_values)
+        max_val = np.nanmax(all_values)
+
+        # Set lower y-limit to 0 if all values are above 0, otherwise set to the minimum value
+        lower_ylim = 0 if min_val > 0 else min_val * 1.1
+        upper_ylim = max_val * 1.1  # Adding a bit of space above the highest value
+        
+        ax.set_ylim(lower_ylim, upper_ylim)
+    else:
+        # If ylim is provided, set the limits to the specified values
+        ax.set_ylim(ylim)
+        if ylim[0] < 0:
+            ax.axhline(0, color='black', linestyle='--', linewidth=2, zorder=1)
+
+    # Set y-ticks based on yticks_increment
+    if yticks_increment is not None:
+        y_min, y_max = ax.get_ylim()
+        y_ticks = np.arange(np.floor(y_min), np.ceil(y_max) + yticks_increment, yticks_increment)
+        ax.set_yticks(y_ticks)
+
+    # Remove the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    # Display the plot without legend
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7'):
+    """
+    Plots the mean values during investigations or other events across bouts with error bars for SEM
+    and individual subject lines connecting the bouts.
+
+    Parameters:
+    - df (DataFrame): A DataFrame where rows are subjects, and bouts are columns.
+                      Values should represent the mean values (e.g., mean DA, investigation times)
+                      for each subject and bout.
+    - title (str): The title for the plot.
+    - ylabel (str): The label for the y-axis.
+    - custom_xtick_labels (list): A list of custom x-tick labels. If not provided, defaults to the column names.
+    - ylim (tuple): A tuple (min, max) to set the y-axis limits. If None, the limits are set automatically based on the data.
+    - bar_color (str): A color or list of colors to use for the bars. Defaults to '#00B7D7'.
+    """
+
+    # Calculate the mean and SEM for each bout (across all subjects)
+    mean_values = df.mean()
+    sem_values = df.sem()
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    # Plot the bar plot with error bars (mean and SEM) without adding it to the legend
+    bars = ax.bar(
+        df.columns, 
+        mean_values, 
+        yerr=sem_values, 
+        capsize=6,  # Increase capsize for larger error bars
+        color=bar_color,  # Custom bar colors
+        linewidth=2,  # Thicker and darker bar outlines
+        width=0.6,
+        hatch='/',  # Add diagonal dashes
+        edgecolor = 'black',
+        error_kw=dict(elinewidth=2.5, capthick=2.5, zorder=5)  # Thicker error bars and make them appear above circles
+    )
+
+
+    # Plot the lines first with a reduced linewidth
+    for i, subject in enumerate(df.index):
+        ax.plot(df.columns, df.loc[subject], linestyle='-', color='gray', alpha=0.5, linewidth=2, zorder=1)
+
+    # Then plot the unfilled circle markers with larger size and custom color based on subject name
+    for i, subject in enumerate(df.index):
+        # Determine color based on subject name
+        if subject.startswith('n'):
+            marker_color = '#15616F'
+        elif subject.startswith('p'):
+            marker_color = '#FFAF00'
+        else:
+            marker_color = 'gray'  # Default color if the subject name doesn't match the criteria
+
+        ax.scatter(df.columns, df.loc[subject], color=marker_color, s=120, alpha=1, linewidth=2, label=subject, zorder=2)
+
+
+    # Add labels, title, and format
+    ax.set_ylabel(ylabel, fontsize=30)
+    ax.set_xlabel('Agent', fontsize=30, labelpad=12)
+    ax.set_title(title, fontsize=20)
+    
+    # Set x-ticks to match the bout labels
+    ax.set_xticks(np.arange(len(df.columns)))
+
+    # Use custom x-tick labels if provided, otherwise use the column names
+    if custom_xtick_labels is not None:
+        ax.set_xticklabels(custom_xtick_labels, fontsize=30)
+    else:
+        ax.set_xticklabels(df.columns, fontsize=30)
+
+    # Increase the font size of y-axis tick numbers
+    ax.tick_params(axis='y', labelsize=30)  # Increase y-axis number size
+    ax.tick_params(axis='x', labelsize=30)  # Optional: also increase x-axis number size
+
 
     # Automatically set the y-limits based on the data range if ylim is not provided
     if ylim is None:
@@ -187,14 +298,20 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
         if ylim[0] < 0:
             ax.axhline(0, color='gray', linestyle='--', linewidth=2, zorder=3)
 
+    # Add the legend on the right side, outside the plot (but only for individual subjects)
+    # ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), title="Subjects")
+
+    # Add a dashed line at y=0 if it exists in the y-limits and auto-adjusted
+    if ylim is None and lower_ylim < 0:
+        ax.axhline(0, color='gray', linestyle='--', linewidth=2, zorder=3)
+
     # Remove the right and top spines
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
 
-    # Display the plot without legend
+    # Display the plot
     plt.tight_layout()
     plt.show()
-
 
 
 def extract_average_behavior_durations(group_data, bouts, behavior='Investigation'):
@@ -402,10 +519,10 @@ def extract_nth_behavior_mean_da_corrected(group_data, bouts, behavior='Investig
     return behavior_mean_df
 
 
-def extract_nth_behavior_mean_peth(group_data, bouts, behavior='Investigation', n=1, windows=[(0, 3)]):
+def extract_nth_behavior_mean_baseline_peth(group_data, bouts, behavior='Investigation', n=1, windows=[(0, 3)], pre_time=5, post_time=5):
     """
-    Extracts the mean of the peri-event time histogram (PETH) data during the n-th occurrence of the specified behavior (e.g., 'Investigation')
-    for each subject and bout, and limits the analysis to the specified time windows.
+    Extracts the mean of the peri-event time histogram (PETH) data during the n-th occurrence of the specified behavior,
+    using baseline z-scoring based on the pre-event period.
     Returns the data in a DataFrame.
 
     Parameters:
@@ -414,17 +531,18 @@ def extract_nth_behavior_mean_peth(group_data, bouts, behavior='Investigation', 
     behavior (str): The behavior of interest to extract mean PETH for the n-th occurrence (default is 'Investigation').
     n (int): The occurrence number of the behavior to extract (default is 1).
     windows (list of tuples): List of time windows (start, end) in seconds to calculate mean PETH (default is [(0, 3)]).
+    pre_time (float): The time in seconds to include before the behavior starts.
+    post_time (float): The time in seconds to include after the behavior starts.
 
     Returns:
     pd.DataFrame: A DataFrame where each row represents a subject, and each column represents the mean PETH during the n-th occurrence of the specified behavior
                   for a specific bout, limited to the specified time windows.
     """
-    
     # Initialize an empty list to hold the data for each subject
     data_list = []
 
     # Populate the data_list from the group_data.blocks
-    for block_data in group_data.blocks.values():
+    for block_name, block_data in group_data.blocks.items():
         if hasattr(block_data, 'bout_dict') and block_data.bout_dict:  # Ensure bout_dict exists and is populated
             # Use the subject name from the TDTData object
             block_data_dict = {'Subject': block_data.subject_name}
@@ -434,37 +552,24 @@ def extract_nth_behavior_mean_peth(group_data, bouts, behavior='Investigation', 
                     # Ensure the requested n-th occurrence exists
                     if len(block_data.bout_dict[bout][behavior]) >= n:
                         nth_behavior = block_data.bout_dict[bout][behavior][n - 1]  # Get the n-th occurrence
-                        event_time = nth_behavior['Start Time']
 
-                        # Define the peri-event window
-                        pre_time = 5  # Seconds before the event
-                        post_time = 5  # Seconds after the event
-                        start_time = event_time - pre_time
-                        end_time = event_time + post_time
+                        # Compute the peri-event data for this specific event
+                        peri_event_data = block_data.compute_nth_bout_baseline_peth(
+                            bout_name=bout,
+                            behavior_name=behavior,
+                            nth_event=n,
+                            pre_time=pre_time,
+                            post_time=post_time
+                        )
 
-                        start_idx = np.searchsorted(block_data.timestamps, start_time)
-                        end_idx = np.searchsorted(block_data.timestamps, end_time)
-
-                        # Define the baseline window for z-score calculation (from pre-time to the event start)
-                        baseline_end_idx = np.searchsorted(block_data.timestamps, event_time)
-                        baseline_dff = block_data.dFF[start_idx:baseline_end_idx]  # ΔF/F values during the baseline period
-
-                        # Calculate the mean and standard deviation for the baseline period
-                        baseline_mean = np.mean(baseline_dff)
-                        baseline_std = np.std(baseline_dff)
-
-                        if baseline_std == 0:
-                            print(f"Baseline std is 0 for {block_data.subject_name} in {bout}. Cannot compute z-score.")
+                        # If peri_event_data is None, skip to next iteration
+                        if peri_event_data is None:
+                            print(f"Peri-event data not available for {block_data.subject_name} in {bout}.")
                             continue
 
-                        # Extract the ΔF/F values for the peri-event window
-                        peri_event_dff = block_data.dFF[start_idx:end_idx]
-
-                        # Calculate z-score using the baseline mean and std
-                        peri_event_zscore = (peri_event_dff - baseline_mean) / baseline_std
-
-                        # Generate the time axis for the peri-event window
-                        time_axis = np.linspace(-pre_time, post_time, len(peri_event_zscore))
+                        # Extract the z-score and time axis from peri_event_data
+                        peri_event_zscore = peri_event_data['zscore']
+                        time_axis = peri_event_data['time_axis']
 
                         # Calculate mean PETH for each window
                         for start, end in windows:
@@ -472,7 +577,7 @@ def extract_nth_behavior_mean_peth(group_data, bouts, behavior='Investigation', 
                             window_indices = (time_axis >= start) & (time_axis <= end)
                             
                             if np.any(window_indices):  # Check if there are valid indices
-                                mean_peth_window = np.mean(peri_event_zscore[window_indices])
+                                mean_peth_window = np.nanmean(peri_event_zscore[window_indices])
                             else:
                                 mean_peth_window = np.nan  # If no data, assign NaN
                             
@@ -499,6 +604,8 @@ def extract_nth_behavior_mean_peth(group_data, bouts, behavior='Investigation', 
     behavior_mean_df.set_index('Subject', inplace=True)
 
     return behavior_mean_df
+
+
 
 
 
@@ -728,3 +835,156 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
             print(f'Slope for {bout}: {metric:.2f}')
         elif metric_type == 'decay':
             print(f'Decay constant for {bout}: {metric:.4f}')
+
+
+
+def compute_mean_da_across_trials(group_data, n=15, pre_time=5, post_time=5, bin_size=0.1, mean_window=4):
+    """
+    Processes the data to compute the mean DA signal across all trials for each of the first n sound cues.
+    
+    Parameters:
+    - group_data: The GroupTDTData object containing the data blocks.
+    - n: Number of sound cues to process.
+    - pre_time: Time before port entry onset to include in PETH (seconds).
+    - post_time: Time after port entry onset to include in PETH (seconds).
+    - bin_size: Bin size for PETH (seconds).
+    - mean_window: The time window (in seconds) from 0 to mean_window to compute the mean DA signal.
+    
+    Returns:
+    - df: A pandas DataFrame containing trial numbers, mean DA signals, and SEMs.
+    """
+    # Initialize data structures
+    peri_event_signals = [[] for _ in range(n)]  # List to collect signals for each of the first n port entries
+    common_time_axis = np.arange(-pre_time, post_time + bin_size, bin_size)
+    
+    # Iterate over all blocks in group_data
+    for block_name, block_data in group_data.blocks.items():
+        print(f"Processing block: {block_name}")
+    
+        # Extract sound cue onsets and port entry onsets from the block
+        sound_cue_onsets = np.array(block_data.behaviors['sound cues'].onset)
+        port_entry_onsets = np.array(block_data.behaviors['port entries'].onset)
+        
+        # Limit to the first n sound cues
+        sound_cue_onsets = sound_cue_onsets[:n]
+        
+        # For each sound cue
+        for sc_index, sc_onset in enumerate(sound_cue_onsets):
+            # Find the first port entry after the sound cue onset
+            pe_indices = np.where(port_entry_onsets > sc_onset)[0]
+            if len(pe_indices) == 0:
+                print(f"No port entries found after sound cue at {sc_onset} seconds in block {block_name}.")
+                continue
+            first_pe_index = pe_indices[0]
+            pe_onset = port_entry_onsets[first_pe_index]
+            
+            # Define time window around the port entry onset
+            start_time = pe_onset - pre_time
+            end_time = pe_onset + post_time
+            
+            # Get indices of DA signal within this window
+            indices = np.where((block_data.timestamps >= start_time) & (block_data.timestamps <= end_time))[0]
+            if len(indices) == 0:
+                print(f"No DA data found for port entry at {pe_onset} seconds in block {block_name}.")
+                continue
+            
+            # Extract DA signal and timestamps
+            da_segment = block_data.zscore[indices]
+            time_segment = block_data.timestamps[indices] - pe_onset  # Align time to port entry onset
+            
+            # Interpolate DA signal onto the common time axis
+            interpolated_da = np.interp(common_time_axis, time_segment, da_segment)
+            
+            # Collect the interpolated DA signal
+            peri_event_signals[sc_index].append(interpolated_da)
+
+    # Compute the mean DA signal and SEM across all trials for each port entry number
+    trial_mean_da = []
+    trial_sem_da = []
+    mean_indices = np.where((common_time_axis >= 0) & (common_time_axis <= mean_window))[0]
+    
+    for event_signals in peri_event_signals:
+        if event_signals:
+            # Convert list of signals to numpy array
+            event_signals = np.array(event_signals)
+            # Compute mean PETH across all trials for this event
+            mean_peth = np.mean(event_signals, axis=0)
+            # Compute mean DA in the specified window
+            mean_da = np.mean(mean_peth[mean_indices])
+            sem_da = np.std(mean_peth[mean_indices]) / np.sqrt(len(event_signals))
+            trial_mean_da.append(mean_da)
+            trial_sem_da.append(sem_da)
+        else:
+            trial_mean_da.append(np.nan)  # Handle cases where no data is available
+            trial_sem_da.append(np.nan)  # Handle cases where no data is available
+
+    # Create a DataFrame to store the results
+    df = pd.DataFrame({
+        'Trial': np.arange(1, n + 1),
+        'Mean_DA': trial_mean_da,
+        'SEM_DA': trial_sem_da
+    })
+    
+    return df
+
+def plot_linear_fit_with_error_bars(df, color='blue'):
+    """
+    Plots the mean DA values with SEM error bars, fits a line of best fit,
+    and computes the Pearson correlation coefficient.
+    
+    Parameters:
+    - df: A pandas DataFrame containing trial numbers, mean DA signals, and SEMs.
+    
+    Returns:
+    - slope: The slope of the line of best fit.
+    - intercept: The intercept of the line of best fit.
+    - r_value: The Pearson correlation coefficient.
+    - p_value: The p-value for the correlation coefficient.
+    """
+    # Sort the DataFrame by Trial
+    df_sorted = df.sort_values('Trial')
+    
+    # Extract trial numbers, mean DA values, and SEMs
+    x_data = df_sorted['Trial'].values
+    y_data = df_sorted['Mean_DA'].values
+    y_err = df_sorted['SEM_DA'].values
+    
+    # Perform linear regression
+    slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
+    y_fitted = intercept + slope * x_data
+    
+    # Plot the data with error bars and the fitted line
+    plt.figure(figsize=(10, 6))
+    plt.errorbar(x_data, y_data, yerr=y_err, fmt='o', label='Mean DA per Trial', color=color, capsize=5)
+    plt.plot(x_data, y_fitted, 'r--', label=f'Best Fit Line\n$R^2$ = {r_value**2:.2f}, p = {p_value:.2e}')
+    plt.xlabel('Tone Number', fontsize=24)
+    plt.ylabel('Mean DA Signal (z-score)', fontsize=24)
+    plt.title('Mean DA Signal Over Trials with Best Fit Line', fontsize=10)
+    plt.legend(fontsize=12)
+    
+    # Set custom x-ticks from 2 to 16 (whole numbers)
+    plt.xticks(np.arange(1, 17, 2), fontsize=20)
+
+    # Remove the top and right spines
+    ax = plt.gca()  # Get current axes
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    # ax.set_ylim(0,0.8)
+    # Optionally, adjust tick label sizes
+    ax.tick_params(axis='both', which='major', labelsize=20)
+
+    plt.tight_layout()
+    plt.show()
+    
+    print(f"Slope: {slope:.4f}, Intercept: {intercept:.4f}")
+    print(f"Pearson correlation coefficient (R): {r_value:.4f}, p-value: {p_value:.4e}")
+    
+    return slope, intercept, r_value, p_value
+
+# Example usage:
+
+
+
+
+
+

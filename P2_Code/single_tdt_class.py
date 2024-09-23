@@ -23,7 +23,6 @@ class TDTData:
         self.streams = {}
         self.behaviors = {key: value for key, value in tdt_data.epocs.items() if key not in ['Cam1', 'Tick']}
 
-
         # Extract the subject name from the folder or file name
         self.subject_name = os.path.basename(folder_path).split('-')[0]
 
@@ -64,10 +63,12 @@ class TDTData:
 
 
 
-
     from hab_dishab.hab_dishab_extension import hab_dishab_plot_behavior_event, hab_dishab_extract_intruder_bouts, hab_dishab_find_behavior_events_in_bout 
     from home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout
     from social_pref.social_pref_extension import sp_extract_intruder_events, sp_plot_behavior_event, sp_remove_time_around_subject_introduced
+    from defeat.defeat_extension import d_proc_extract_bout, d_proc_find_behavior_events_in_bout, d_proc_plot_behavior_event
+    from reward_training.reward_training_extension import rt_plot_behavior_event, find_overlapping_port_entries, align_port_entries_to_sound_cues
+
 
     def print_behaviors(self):
         """
@@ -364,7 +365,34 @@ class TDTData:
 
 
 
-    '''********************************** DFF AND ZSCORE **********************************'''
+    '''********************************** ZSCORE **********************************'''
+    def find_baseline_period(self):
+        """
+        Finds the baseline period from the beginning of the timestamps array to 2 minutes after.
+
+        Returns:
+        baseline_start (float): The start time of the baseline period (always 0).
+        baseline_end (float): The end time of the baseline period (2 minutes after the start).
+        """
+        if self.timestamps is None or len(self.timestamps) == 0:
+            raise ValueError("Timestamps data is missing or empty.")
+        
+        # Duration of the baseline period in seconds
+        baseline_duration_in_seconds = 2 * 60  + 20 # 2 minutes 20 seconds
+
+        # Calculate the end time for the baseline period
+        baseline_end_time = self.timestamps[0] + baseline_duration_in_seconds
+
+        # Ensure the baseline period does not exceed the data length
+        if baseline_end_time > self.timestamps[-1]:
+            baseline_end_time = self.timestamps[-1]
+
+        baseline_start = self.timestamps[0]
+        baseline_end = baseline_end_time
+
+        return baseline_start, baseline_end
+
+
     def compute_zscore(self, method='standard', baseline_start=None, baseline_end=None):
         """
         Computes the z-score of the delta F/F (dFF) signal and saves it as a class variable.
@@ -996,46 +1024,37 @@ class TDTData:
             'time_axis': time_axis
         }
 
-    def compute_1st_bout_peth(self, bout_name, behavior_name, pre_time=5, post_time=5, bin_size=0.1):
+
+    def compute_nth_bout_baseline_peth(self, bout_name, behavior_name, pre_time=5, post_time=5, bin_size=0.1, nth_event=1):
         """
-        Computes the peri-event time histogram (PETH) data for the first occurrence of a given behavior in a specified bout.
-        Uses the behavior event start time to calculate the peri-event window.
-        
-        Z-score is calculated using the pre-time window as the baseline.
+        Computes the peri-event time histogram (PETH) data for the nth occurrence of a given behavior in a specific bout,
+        using baseline z-scoring based on the pre-event period.
 
         Parameters:
-        bout_name (str): The name of the bout (e.g., 'Short_Term_1') in which to find the behavior.
-        behavior_name (str): The name of the behavior (e.g., 'Investigation') to compute the PETH for.
-        pre_time (float): The time in seconds to include before the behavior starts.
-        post_time (float): The time in seconds to include after the behavior starts.
+        bout_name (str): The name of the bout to analyze.
+        behavior_name (str): The name of the behavior to analyze.
+        pre_time (float): The time in seconds to include before the event.
+        post_time (float): The time in seconds to include after the event.
         bin_size (float): The size of each bin in the histogram (in seconds).
+        nth_event (int): The nth occurrence of the behavior to analyze.
 
         Returns:
-        None. Stores peri-event data as a class variable.
+        dict: A dictionary containing 'zscore', 'dFF', and 'time_axis' arrays.
         """
-        if bout_name not in self.bout_dict:
-            print(f"Bout {bout_name} not found.")
-            return
+        if bout_name not in self.bout_dict or behavior_name not in self.bout_dict[bout_name]:
+            print(f"No {behavior_name} found in {bout_name}.")
+            return None
 
-        if behavior_name not in self.bout_dict[bout_name]:
-            print(f"Behavior {behavior_name} not found in {bout_name}.")
-            return
-
-        # Ensure ΔF/F is computed (we will calculate the z-score manually using the pre-time as baseline)
-        if self.dFF is None:
-            self.compute_dFF()
-        self.dFF = np.array(self.dFF)
-
-        # Extract the first event (behavior) within the specified bout
         behavior_events = self.bout_dict[bout_name][behavior_name]
-        if len(behavior_events) == 0:
-            print(f"No occurrences of {behavior_name} found in {bout_name}.")
-            return
+        
+        if len(behavior_events) < nth_event:
+            print(f"Less than {nth_event} events found for {behavior_name} in {bout_name}.")
+            return None
 
-        first_event = behavior_events[0]
-        event_time = first_event['Start Time']  # Get the start time of the first event
+        # Get the nth event's time
+        event_time = behavior_events[nth_event - 1]['Start Time']
 
-        # Find the peri-event window around the first behavior event
+        # Find the peri-event window around the event
         start_time = event_time - pre_time
         end_time = event_time + post_time
 
@@ -1054,15 +1073,16 @@ class TDTData:
 
         # Define the baseline window for z-score calculation (from pre-time to the event start)
         baseline_end_idx = np.searchsorted(self.timestamps, event_time)
+        self.dFF = np.array(self.dFF)
         baseline_dff = self.dFF[start_idx:baseline_end_idx]  # ΔF/F values during the baseline period
 
         # Calculate the mean and standard deviation for the baseline period
-        baseline_mean = np.mean(baseline_dff)
-        baseline_std = np.std(baseline_dff)
+        baseline_mean = np.nanmean(baseline_dff)
+        baseline_std = np.nanstd(baseline_dff)
 
-        if baseline_std == 0:
-            print("Baseline standard deviation is 0. Cannot compute z-score.")
-            return
+        if baseline_std == 0 or np.isnan(baseline_std):
+            print("Baseline standard deviation is 0 or NaN. Cannot compute z-score.")
+            return None
 
         # Extract the ΔF/F values for the peri-event window
         peri_event_dff = self.dFF[start_idx:end_idx]
@@ -1079,14 +1099,15 @@ class TDTData:
         # Generate the time axis for the peri-event window with padding applied
         time_axis = np.linspace(-pre_time, post_time, len(peri_event_zscore))
 
-        # Store both peri-event zscore, dFF, and time axis in a class variable dictionary
-        self.peri_event_data = {
+        # Return the peri-event data as a dictionary
+        peri_event_data = {
             'zscore': peri_event_zscore,
             'dFF': peri_event_dff,
             'time_axis': time_axis
         }
 
-        # print(f"Peri-event data for {behavior_name} in {bout_name} computed and stored.")
+        return peri_event_data
+
 
 
     def plot_1st_event_peth(self, signal_type='zscore'):

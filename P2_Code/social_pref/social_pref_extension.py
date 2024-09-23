@@ -88,7 +88,6 @@ def sp_extract_intruder_events(self, behavior_csv_path, cup_assignment_csv_path)
     self.behavior_event_dict = behavior_event_dict
 
 
-
 def sp_plot_behavior_event(self, plot_type='dFF', ax=None):
     """
     Plots Delta F/F (dFF) or z-scored signal with behavior events for the social preference experiment.
@@ -337,6 +336,44 @@ def sp_compute_first_bout_peth_all_blocks(self, bouts=None, pre_time=5, post_tim
         for bout, peri_event_data in bout_data.items():
             for key in ['zscore', 'dFF', 'time_axis']:  # Truncate zscore, dFF, and time_axis
                 peri_event_data[key] = peri_event_data[key][:min_time_length]
+
+
+def plot_peri_event_data_group(self):
+    """
+    Plots the peri-event data (average across blocks) for each bout.
+    """
+    import matplotlib.pyplot as plt
+
+    bouts = list(self.peri_event_data_all_blocks[next(iter(self.peri_event_data_all_blocks))].keys())
+    num_bouts = len(bouts)
+
+    fig, axes = plt.subplots(num_bouts, 1, figsize=(8, num_bouts * 3), sharex=True)
+    if num_bouts == 1:
+        axes = [axes]  # Ensure axes is iterable
+
+    for i, bout in enumerate(bouts):
+        all_zscores = []
+        for block_name, bout_data in self.peri_event_data_all_blocks.items():
+            if bout in bout_data:
+                peri_event_data = bout_data[bout]
+                all_zscores.append(peri_event_data['zscore'])
+
+        # Compute the average z-score across blocks
+        if all_zscores:
+            mean_zscore = np.mean(all_zscores, axis=0)
+            time_axis = peri_event_data['time_axis']  # Time axis should be the same after truncation
+
+            axes[i].plot(time_axis, mean_zscore, label=f'{bout}')
+            axes[i].set_title(f'Average Z-score for {bout}')
+            axes[i].set_ylabel('Z-score')
+            axes[i].legend()
+        else:
+            axes[i].set_title(f'No data for {bout}')
+            axes[i].set_ylabel('Z-score')
+
+    axes[-1].set_xlabel('Time (s) relative to event')
+    plt.tight_layout()
+    plt.show()
 
 
 

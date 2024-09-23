@@ -77,7 +77,7 @@ def hab_dishab_plot_behavior_event(self, behavior_name='all', plot_type='dFF', a
         if self.zscore is None:
             self.compute_zscore()
         y_data = self.zscore
-        y_label = 'z-score'
+        y_label = 'Z-scored ΔF/F'
         y_title = 'Z-scored Signal'
     else:
         raise ValueError("Invalid plot_type. Only 'dFF' and 'zscore' are supported.")
@@ -158,7 +158,6 @@ def hab_dishab_plot_behavior_event(self, behavior_name='all', plot_type='dFF', a
         plt.show()
 
 
-
 def hab_dishab_extract_intruder_bouts(self, csv_base_path):
     """
     Extracts 's1 Introduced', 's1 Removed', 's2 Introduced', and 's2 Removed' events from a CSV file,
@@ -192,7 +191,7 @@ def hab_dishab_extract_intruder_bouts(self, csv_base_path):
     # Now compute z-score with baseline being from initial artifact removal to the first s1 Introduced event
     if s1_events['introduced']:
         baseline_end_time = s1_events['introduced'][0]
-        self.compute_zscore()
+        # self.compute_zscore()
         # self.compute_zscore(method='baseline', baseline_start=self.timestamps[0], baseline_end=baseline_end_time)
 
     # # Remove ITI times (Time between when a mouse is removed and then introduced)
@@ -299,7 +298,7 @@ def hab_dishab_processing(self):
             # Call the three functions in sequence using the CSV file path
             tdt_data_obj.hab_dishab_extract_intruder_bouts(csv_file_path)
             tdt_data_obj.hab_dishab_find_behavior_events_in_bout()
-            tdt_data_obj.get_first_behavior()            # Get the first behavior in each bout
+            tdt_data_obj.get_first_behavior()
 
 
 

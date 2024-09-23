@@ -34,6 +34,8 @@ class GroupTDTData:
     # from P2_Code.social_pref. import 
     from home_cage.home_cage_extension import hc_processing, hc_plot_individual_behavior
     from social_pref.social_pref_extension import sp_processing, sp_compute_first_bout_peth_all_blocks
+    from defeat.defeat_extension import d_proc_processing, d_proc_plot_individual_behavior
+    from reward_training.reward_training_extension import rt_processing, rt_plot_individual_behavior, rt_extract_and_plot, rt_compute_peth_per_event, rt_plot_peth_per_event
 
 
     def load_blocks(self):
@@ -90,23 +92,26 @@ class GroupTDTData:
                 # Remove specific time segments for this block
                 self.remove_time_segments_from_block(block_folder, time_segments_to_remove[tdt_data_obj.subject_name])
 
-            if os.path.exists(csv_file_path):
-                print(f"Processing {block_folder}...")
-                if remove_led_artifact:
-                    tdt_data_obj.remove_initial_LED_artifact(t=t)
-                    # tdt_data_obj.remove_final_data_segment(t = 10)
-                
-                tdt_data_obj.smooth_and_apply(window_len=int(tdt_data_obj.fs)*2)
-                tdt_data_obj.apply_ma_baseline_correction()
-                tdt_data_obj.align_channels()
-                tdt_data_obj.compute_dFF()
-                tdt_data_obj.compute_zscore()
+            print(f"Processing {block_folder}...")
+            if remove_led_artifact:
+                tdt_data_obj.remove_initial_LED_artifact(t=t)
+                tdt_data_obj.remove_final_data_segment(t = 10)
+            
+            tdt_data_obj.smooth_and_apply(window_len=int(tdt_data_obj.fs)*2)
+            tdt_data_obj.apply_ma_baseline_correction()
+            tdt_data_obj.align_channels()
+            tdt_data_obj.compute_dFF()
+            baseline_start, baseline_end = tdt_data_obj.find_baseline_period()  
+            # print(baseline_start)
+            # print(baseline_end) 
+            # tdt_data_obj.compute_zscore(method = 'baseline', baseline_start = baseline_start, baseline_end = baseline_end)
+            tdt_data_obj.compute_zscore(method = 'standard')
+            tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
+            tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
+            tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
 
-                tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
-                tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=1, min_occurrences=1)
-                tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
-
-                tdt_data_obj.verify_signal()
+            tdt_data_obj.verify_signal()
+            # tdt_data_obj.zscore = None
 
     '''********************************** BEHAVIORS **********************************'''
     def plot_all_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0.0, max_duration=np.inf):
@@ -372,56 +377,57 @@ class GroupTDTData:
         plt.tight_layout()
         plt.show()
 
+    def plot_first_investigation_vs_dff(self, bouts=None, behavior_name='Investigation'):
+        """
+        Plot the first occurrence of the specified behavior duration vs. mean Z-scored ΔF/F during the 0-4s window for 
+        all blocks, color-coded by individual subject identity.
 
-    def plot_1st_behavior_vs_dff_all(self, behavior_name='Investigation', min_duration=0.0, max_duration=np.inf):
-        """
-        Plot the specified behavior duration vs. mean Z-scored ΔF/F during the first occurrence of that behavior
-        for all blocks, color-coded by individual subject identity. Only includes the first behavior event that is longer 
-        than min_duration and shorter than max_duration seconds.
-        
         Parameters:
-        behavior_name (str): The name of the behavior to analyze (e.g., 'Investigation', 'Approach', etc.).
-        min_duration (float): The minimum duration of behavior to include in the plot.
-        max_duration (float): The maximum duration of behavior to include in the plot.
+        behavior_name (str): The name of the behavior to analyze (default is 'Investigation').
+        bouts (list): A list of bout names to include in the analysis.
         """
-        behavior_durations = []
+        if bouts is None:
+            bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']
+
         mean_zscored_dffs = []
+        behavior_durations = []
         subject_names = []
 
-        # Loop through each block in self.blocks
-        for block_name, block_data in self.blocks.items():
-            if block_data.bout_dict:
-                for bout, behavior_data in block_data.bout_dict.items():
-                    # Check if the behavior exists in the bout
-                    if behavior_name in behavior_data:
-                        # Look through all occurrences of the behavior and find the first one that fits the criteria
-                        valid_event_found = False
-                        for event in behavior_data[behavior_name]:
-                            duration = event.get('Total Duration', None)
-                            mean_zscore = event.get('Mean zscore', None)
+        # Step 1: Compute the PETH for the first occurrence of 'Investigation'
+        self.compute_nth_bout_peth_all_blocks(
+            behavior_name=behavior_name,
+            nth_occurrence=1,
+            bouts=bouts,
+            pre_time=4,
+            post_time=4
+        )
 
-                            # Check if the duration meets the specified criteria
-                            if duration is not None and min_duration < duration < max_duration:
-                                behavior_durations.append(duration)
-                                mean_zscored_dffs.append(mean_zscore)
-                                subject_names.append(block_data.subject_name)  # Block name as the subject identifier
-                                valid_event_found = True  # Mark that a valid event has been found
-                                break  # Exit the loop once the first valid event is found
-                        
-                        # If no valid event was found, continue to the next bout
-                        if not valid_event_found:
-                            continue
+        # Step 2: Extract mean Z-scored ΔF/F for the time window (0-4s) and the corresponding investigation duration
+        for block_name, bout_data in self.peri_event_data_all_blocks.items():
+            for bout, peri_event_data in bout_data.items():
+                time_axis = peri_event_data['time_axis']
+                zscore = peri_event_data['zscore']
+
+                # Find indices corresponding to the 0-4s window
+                window_indices = (time_axis >= 0) & (time_axis <= 4)
+                mean_zscore = np.mean(zscore[window_indices])
+
+                # Get the duration of the first investigation event for this bout
+                investigation_duration = None
+                if bout in self.blocks[block_name].bout_dict and 'Investigation' in self.blocks[block_name].bout_dict[bout]:
+                    first_investigation = self.blocks[block_name].bout_dict[bout]['Investigation'][0]
+                    investigation_duration = first_investigation['Total Duration']
+
+                # Store the results
+                if investigation_duration is not None and mean_zscore is not None:
+                    mean_zscored_dffs.append(mean_zscore)
+                    behavior_durations.append(investigation_duration)
+                    subject_names.append(self.blocks[block_name].subject_name)  # Block name as the subject identifier
 
         # Convert lists to numpy arrays
-        behavior_durations = np.array(behavior_durations, dtype=np.float64)
         mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
+        behavior_durations = np.array(behavior_durations, dtype=np.float64)
         subject_names = np.array(subject_names)
-
-        # Filter out any entries where either behavior_durations or mean_zscored_dffs is NaN
-        valid_indices = ~np.isnan(behavior_durations) & ~np.isnan(mean_zscored_dffs)
-        behavior_durations = behavior_durations[valid_indices]
-        mean_zscored_dffs = mean_zscored_dffs[valid_indices]
-        subject_names = subject_names[valid_indices]
 
         if len(mean_zscored_dffs) == 0 or len(behavior_durations) == 0:
             print("No valid data points for correlation.")
@@ -435,13 +441,13 @@ class GroupTDTData:
         color_palette = sns.color_palette("hsv", len(unique_subjects))
         subject_color_map = {subject: color_palette[i] for i, subject in enumerate(unique_subjects)}
 
-        # Plotting the scatter plot
+        # Step 3: Plotting the scatter plot
         plt.figure(figsize=(12, 6))
-        
+
         for subject in unique_subjects:
             # Create a mask for each subject
             mask = subject_names == subject
-            plt.scatter(mean_zscored_dffs[mask], behavior_durations[mask], 
+            plt.scatter(mean_zscored_dffs[mask], behavior_durations[mask],
                         color=subject_color_map[subject], label=subject, alpha=0.6)
 
         # Adding the regression line
@@ -449,12 +455,12 @@ class GroupTDTData:
         plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--')
 
         # Add labels and title
-        plt.xlabel(f'Mean Z-scored ΔF/F during 1st valid {behavior_name.lower()} event')
-        plt.ylabel(f'{behavior_name} duration (s)')
-        plt.title(f'Correlation between 1st {behavior_name} Duration and DA Response (All Blocks > {min_duration}s and < {max_duration}s)')
-        
+        plt.xlabel(f'Mean Z-scored ΔF/F (0-4s) during {behavior_name.lower()} events')
+        plt.ylabel(f'{behavior_name} Duration (s)')
+        plt.title(f'Correlation between {behavior_name} Duration and DA Response\n(First {behavior_name} per Mouse)')
+
         # Display Pearson correlation and p-value
-        plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} sessions',
+        plt.text(0.05, 0.95, f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} events',
                 transform=plt.gca().transAxes, fontsize=12, verticalalignment='top')
 
         # Add a legend with subject names
@@ -603,14 +609,15 @@ class GroupTDTData:
 
 
     '''********************************** PETHS **********************************'''
-    def compute_first_bout_peth_all_blocks(self, behavior_name='Investigation', bouts=None, pre_time=5, post_time=5, bin_size=0.1):
+    def compute_nth_bout_peth_all_blocks(self, behavior_name='Investigation', nth_occurrence=1, bouts=None, pre_time=5, post_time=5, bin_size=0.1):
         """
-        Computes the peri-event time histogram (PETH) data for the first occurrence of a given event in each bout.
-        Uses the TDTData class's `compute_1st_bout_peth` function and stores the peri-event data (zscore, dFF, and time axis) 
+        Computes the peri-event time histogram (PETH) data for the nth occurrence of a given event in each bout.
+        Uses the TDTData class's `compute_nth_bout_baseline_peth` function and stores the peri-event data (zscore, dFF, and time axis)
         for each bout as a class variable.
 
         Parameters:
         behavior_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
+        nth_occurrence (int): The occurrence number of the behavior to analyze (1 for first occurrence, 2 for second, etc.).
         bouts (list): A list of bout names to process.
         pre_time (float): The time in seconds to include before the event.
         post_time (float): The time in seconds to include after the event.
@@ -634,19 +641,25 @@ class GroupTDTData:
             # Loop through each bout in the specified bouts
             for bout in bouts:
                 if bout in block_data.bout_dict and behavior_name in block_data.bout_dict[bout]:
-                    # Use the `compute_1st_bout_peth` method to compute the PETH for the first event in the bout
-                    block_data.compute_1st_bout_peth(bout_name=bout, behavior_name=behavior_name, pre_time=pre_time, post_time=post_time, bin_size=bin_size)
+                    # Use the `compute_nth_bout_baseline_peth` method to compute the PETH for the nth event in the bout
+                    peri_event_data = block_data.compute_nth_bout_baseline_peth(
+                        bout_name=bout, 
+                        behavior_name=behavior_name, 
+                        nth_event=nth_occurrence, 
+                        pre_time=pre_time, 
+                        post_time=post_time, 
+                        bin_size=bin_size
+                    )
 
-                    # Extract and store the peri-event data (assumed to be stored in block_data.peri_event_data)
-                    if hasattr(block_data, 'peri_event_data'):
-                        self.peri_event_data_all_blocks[block_name][bout] = block_data.peri_event_data
+                    if peri_event_data:
+                        self.peri_event_data_all_blocks[block_name][bout] = peri_event_data
 
                         # Check the time axis length to find the shortest one
-                        time_axis = block_data.peri_event_data['time_axis']
+                        time_axis = peri_event_data['time_axis']
                         if len(time_axis) < min_time_length:
                             min_time_length = len(time_axis)
                     else:
-                        print(f"No peri-event data found for {block_name}, {bout}.")
+                        print(f"No valid peri-event data found for {block_name}, {bout}.")
                 else:
                     print(f"No {behavior_name} found in {bout} for {block_name}.")
 
@@ -695,6 +708,7 @@ class GroupTDTData:
         plt.legend()
         plt.tight_layout()
         plt.show()
+
 
     def compute_first_bout_peth_all_blocks_standard(self, behavior_name='Investigation', bouts=None, pre_time=5, post_time=5, bin_size=0.1):
         """
@@ -767,104 +781,94 @@ class GroupTDTData:
                 peri_event_data['time_axis'] = peri_event_data['time_axis'][:min_time_length]
 
 
-
-    def plot_mean_peth(self, signal_type='zscore', error_type='sem', title= 'NA'):
-        """
-        Plots the mean and either SEM or Std of the peri-event time histogram (PETH) for the first event across all blocks.
-
-        Parameters:
-        signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
-        error_type (str): The type of error to plot. Options are 'sem' for Standard Error of the Mean or 'std' for Standard Deviation.
-
-        Returns:
-        None. Displays the mean PETH plot with SEM or Std shaded area.
-        """
-        # Ensure that peri-event data for all blocks is already computed
+    def plot_mean_peth(self, signal_type='zscore', error_type='sem', title='NA'):
         if not hasattr(self, 'peri_event_data_all_blocks'):
-            print("No peri-event data found. Please compute PETH first using compute_first_event_peth_all_blocks.")
+            print("No peri-event data found. Please compute PETH first.")
             return
 
-        # Collect all the peri-event traces
         all_traces = []
-        time_axis = []
+        time_axis = None
 
-        # Loop through each block and collect the peri-event data
-        for block_name, peri_event_data in self.peri_event_data_all_blocks.items():
-            if signal_type == 'zscore':
-                all_traces.append(peri_event_data['zscore'])
-                ylabel = 'Z-scored ΔF/F'
-            elif signal_type == 'dFF':
-                all_traces.append(peri_event_data['dFF'])
-                ylabel = r'$\Delta$F/F'
-            else:
-                print("Invalid signal_type. Use 'zscore' or 'dFF'.")
-                return
+        for block_name, bout_data in self.peri_event_data_all_blocks.items():
+            for bout_name, peri_event_data in bout_data.items():
+                if signal_type == 'zscore':
+                    all_traces.append(peri_event_data['zscore'])
+                    ylabel = 'Z-scored ΔF/F'
+                elif signal_type == 'dFF':
+                    all_traces.append(peri_event_data['dFF'])
+                    ylabel = r'$\Delta$F/F'
+                else:
+                    print("Invalid signal_type. Use 'zscore' or 'dFF'.")
+                    return
 
-            time_axis = peri_event_data['time_axis']
+                if time_axis is None:
+                    time_axis = peri_event_data['time_axis']
 
-        # Find the minimum trace length to truncate all traces to the same length
-        min_length = min([len(trace) for trace in all_traces])
-
-        # Truncate all traces to the same length (the shortest one)
-        all_traces = np.array([trace[:min_length] for trace in all_traces])
-
-        # Also truncate the time axis to match the trace length
+        # Truncate all traces to the shortest length
+        min_length = min(len(trace) for trace in all_traces)
+        all_traces = [trace[:min_length] for trace in all_traces]
+        time_axis = np.array(time_axis)
         time_axis = time_axis[:min_length]
 
-        # Calculate the mean across all traces
         mean_trace = np.mean(all_traces, axis=0)
 
-        # Calculate SEM or Std across all traces depending on the selected error type
         if error_type == 'sem':
-            error_trace = np.std(all_traces, axis=0) / np.sqrt(len(all_traces))  # SEM
+            error_trace = np.std(all_traces, axis=0) / np.sqrt(len(all_traces))
             error_label = 'SEM'
         elif error_type == 'std':
-            error_trace = np.std(all_traces, axis=0)  # Standard Deviation
+            error_trace = np.std(all_traces, axis=0)
             error_label = 'Std'
         else:
             print("Invalid error_type. Use 'sem' or 'std'.")
             return
 
-        # Plot the mean trace with SEM or Std shading
         plt.figure(figsize=(12, 6))
         plt.plot(time_axis, mean_trace, color='blue', label=f'Mean {signal_type}')
         plt.fill_between(time_axis, mean_trace - error_trace, mean_trace + error_trace, color='blue', alpha=0.3, label=error_label)
-
-        # Plot event onset line
         plt.axvline(0, color='black', linestyle='--', label='Event onset')
-        
-        # Add labels and titles
         plt.xlabel('Time (s)')
         plt.ylabel(ylabel)
         plt.title(title)
-        
-        # Add legend and display plot
         plt.legend()
         plt.tight_layout()
         plt.show()
 
 
 
-    def plot_peth_for_bouts(self, signal_type='zscore', error_type='sem', bouts=None, title='PETH for First Investigation Across Agents', color='#00B7D7', custom_xtick_labels=None):
+    def plot_peth_for_bouts(self, signal_type='zscore', error_type='sem', bouts=None, title='PETH for First Investigation Across Agents', 
+                        color='#00B7D7', display_pre_time=3, display_post_time=3, yticks_interval=2):
         """
         Plots the mean and SEM/Std of the peri-event time histogram (PETH) for the first event across all bouts.
-
+        
         Parameters:
         signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
         error_type (str): The type of error to plot. Options are 'sem' for Standard Error of the Mean or 'std' for Standard Deviation.
-        bouts (list): A list of bout names to plot. If None, uses default ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1'].
+        bouts (list or str): A list of bout names to plot or a single bout name. If None, uses default ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1'].
         title (str): Title for the entire figure.
         color (str): Color for both the trace line and the error area (default is cyan '#00B7D7').
-        custom_xtick_labels (list): Custom labels for the x-ticks across all subplots. If None, defaults to bout names.
+        display_pre_time (float): How much time to show before the event on the x-axis (default is 3 seconds).
+        display_post_time (float): How much time to show after the event on the x-axis (default is 3 seconds).
+        yticks_interval (float): Interval for the y-ticks on the plots (default is 2).
 
         Returns:
         None. Displays the mean PETH plot for each bout with SEM/Std shaded area.
         """
+
+        # Handle single bout by converting it to a list if it's not already one
+        if isinstance(bouts, str):
+            bouts = [bouts]
+        
+        # Default to these bouts if none provided
         if bouts is None:
             bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']
-
-        fig, axes = plt.subplots(1, len(bouts), figsize=(15, 5), sharey=True)  # Adjusted width of the figure
-
+        
+        # Adjust the figure size to be less wide and more tall, with more space between traces
+        fig, axes = plt.subplots(1, len(bouts), figsize=(5 * len(bouts), 10), sharey=True)  # Adjusted dimensions
+        
+        # If there's only one bout, make axes a list to keep the logic consistent
+        if len(bouts) == 1:
+            axes = [axes]
+        
         for i, bout in enumerate(bouts):
             ax = axes[i]  # Get the subplot for this bout
 
@@ -901,6 +905,15 @@ class GroupTDTData:
                 error_trace = np.std(all_traces, axis=0)  # Standard Deviation
                 error_label = 'Std'
 
+            # Determine the indices for the display range
+            display_start_idx = np.searchsorted(time_axis, -display_pre_time)
+            display_end_idx = np.searchsorted(time_axis, display_post_time)
+
+            # Truncate the mean trace, error trace, and time axis to the desired display range
+            mean_trace = mean_trace[display_start_idx:display_end_idx]
+            error_trace = error_trace[display_start_idx:display_end_idx]
+            time_axis = time_axis[display_start_idx:display_end_idx]
+
             # Plot the mean trace with SEM/Std shaded area, with customizable color
             ax.plot(time_axis, mean_trace, color=color, label=f'Mean {signal_type.capitalize()}', linewidth=1.5)  # Trace color
             ax.fill_between(time_axis, mean_trace - error_trace, mean_trace + error_trace, color=color, alpha=0.3, label=error_label)  # Error color
@@ -908,20 +921,30 @@ class GroupTDTData:
             # Plot event onset line
             ax.axvline(0, color='black', linestyle='--', label='Event onset')
 
-            # Set the title for each bout
-            if custom_xtick_labels is not None and i < len(custom_xtick_labels):
-                ax.set_title(custom_xtick_labels[i], fontsize=14)
-            else:
-                ax.set_title(bout.replace('_', ' '), fontsize=14)
+            # Set the x-ticks to show only the last time, 0, and the very end time
+            ax.set_xticks([time_axis[0], 0, time_axis[-1]])
+            ax.set_xticklabels([f'{time_axis[0]:.1f}', '0', f'{time_axis[-1]:.1f}'], fontsize= 40)
 
-            ax.set_xlabel('Time (s)', fontsize=12)
+            # Set the y-tick labels with larger font size and specified interval
+            y_min, y_max = ax.get_ylim()
+            y_ticks = np.arange(np.floor(y_min / yticks_interval) * yticks_interval, 
+                                np.ceil(y_max / yticks_interval) * yticks_interval + yticks_interval, 
+                                yticks_interval)
+            ax.set_yticks(y_ticks)
+            ax.set_yticklabels([f'{y:.0f}' for y in y_ticks], fontsize=40)  # Significantly larger y-tick labels
+
+            # Set the title for each bout
+            # ax.set_title(f'{bout.replace("_", " ")}', fontsize=30)
+
+            ax.set_xlabel('Onset (s)', fontsize=40)
 
             # Remove the right and top spines for each subplot
             ax.spines['right'].set_visible(False)
             ax.spines['top'].set_visible(False)
 
-        axes[0].set_ylabel(f'{signal_type.capitalize()} dFF', fontsize=12)  # Set shared y-label for all subplots
-        plt.suptitle(title, fontsize=16)
+        # Set the y-label with larger font size
+        axes[0].set_ylabel(f'{signal_type.capitalize()} dFF', fontsize=40)  # Set shared y-label for all subplots
+
+        plt.suptitle(title, fontsize=30)
         plt.tight_layout()
         plt.show()
-

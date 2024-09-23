@@ -17,7 +17,7 @@ def hc_plot_behavior_event(self, behavior_name='all', plot_type='dFF', ax=None):
     y_data = []
     if plot_type == 'dFF':
         if self.dFF is None:
-            self.compute_dff()
+            self.compute_dFF()
         y_data = self.dFF
         y_label = r'$\Delta$F/F'
         y_title = 'Delta F/F Signal'
