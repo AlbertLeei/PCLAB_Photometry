@@ -110,7 +110,8 @@ def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colo
     plt.show()
 
 
-def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7', yticks_increment=None, xlabel = 'Agent'):
+def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, custom_xtick_colors=None, ylim=None, bar_color='#00B7D7', 
+                             yticks_increment=None, xlabel='Agent',figsize = (12,7), pad_inches = 0.1):
     """
     Plots the mean values during investigations or other events across bouts with error bars for SEM
     and individual subject lines connecting the bouts. All subjects are plotted in gray.
@@ -122,9 +123,11 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
     - title (str): The title for the plot.
     - ylabel (str): The label for the y-axis.
     - custom_xtick_labels (list): A list of custom x-tick labels. If not provided, defaults to the column names.
+    - custom_xtick_colors (list): A list of colors for the x-tick labels. Must be the same length as `custom_xtick_labels`.
     - ylim (tuple): A tuple (min, max) to set the y-axis limits. If None, the limits are set automatically based on the data.
     - bar_color (str): The color to use for the bars (default is cyan).
     - yticks_increment (float): Increment amount for the y-axis ticks.
+    - xlabel (str): The label for the x-axis.
     """
 
     # Calculate the mean and SEM for each bout (across all subjects)
@@ -132,7 +135,7 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
     sem_values = df.sem()
 
     # Create the plot
-    fig, ax = plt.subplots(figsize=(12, 7))  #10,7
+    fig, ax = plt.subplots(figsize=figsize)  #12,7
 
     # Plot the bar plot with error bars (mean and SEM) without adding it to the legend
     bars = ax.bar(
@@ -142,22 +145,23 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
         capsize=6,  # Increase capsize for larger error bars
         color=bar_color,  # Customizable bar color
         edgecolor='black', 
-        linewidth=2,  # Thicker and darker bar outlines
+        linewidth=4,  # Thicker and darker bar outlines
         width=0.6,
-        error_kw=dict(elinewidth=2.5, capthick=2.5, zorder=5)  # Thicker error bars and make them appear above circles
+        error_kw=dict(elinewidth=4, capthick=4,capsize=10,zorder=5)  # Thicker error bars and make them appear above circles
+        # elinewidth = 2.5, capthick = 2.5
     )
 
     # Plot all subject lines and markers in gray
     for i, subject in enumerate(df.index):
-        ax.plot(df.columns, df.loc[subject], linestyle='-', color='gray', alpha=0.5, linewidth=2, zorder=1)
+        ax.plot(df.columns, df.loc[subject], linestyle='-', color='gray', alpha=0.5, linewidth=2.5, zorder=1)
 
     # Plot unfilled circle markers with larger size, in gray
     for i, subject in enumerate(df.index):
-        ax.scatter(df.columns, df.loc[subject], facecolors='none', edgecolors='gray', s=120, alpha=0.6, linewidth=2, zorder=2)
+        ax.scatter(df.columns, df.loc[subject], facecolors='none', edgecolors='gray', s=120, alpha=0.6, linewidth=4, zorder=2)
 
     # Add labels, title, and format
-    ax.set_ylabel(ylabel, fontsize=30)  # Larger y-axis label
-    ax.set_xlabel(xlabel, fontsize=30, labelpad=12)
+    ax.set_ylabel(ylabel, fontsize=44, labelpad=12)  # Larger y-axis label
+    ax.set_xlabel(xlabel, fontsize=44, labelpad=12)
     ax.set_title(title, fontsize=16)
 
     # Set x-ticks to match the bout labels
@@ -165,13 +169,16 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
 
     # Use custom x-tick labels if provided, otherwise use the column names
     if custom_xtick_labels is not None:
-        ax.set_xticklabels(custom_xtick_labels, fontsize=20)
+        ax.set_xticklabels(custom_xtick_labels, fontsize=28)
+        if custom_xtick_colors is not None:
+            for tick, color in zip(ax.get_xticklabels(), custom_xtick_colors):
+                tick.set_color(color)
     else:
-        ax.set_xticklabels(df.columns, fontsize=20)
+        ax.set_xticklabels(df.columns, fontsize=26)
 
     # Increase the font size of y-axis tick numbers
-    ax.tick_params(axis='y', labelsize=30)  # Increase y-axis number size
-    ax.tick_params(axis='x', labelsize=30)  # Optional: also increase x-axis number size
+    ax.tick_params(axis='y', labelsize=48)  # Increase y-axis number size
+    ax.tick_params(axis='x', labelsize=38)  # Optional: also increase x-axis number size
 
     # Automatically set the y-limits based on the data range if ylim is not provided
     if ylim is None:
@@ -200,10 +207,16 @@ def plot_y_across_bouts_gray(df, title='Mean Across Bouts', ylabel='Mean Value',
     # Remove the right and top spines
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_linewidth(5)    # Left axis line
+    ax.spines['bottom'].set_linewidth(5)  # Bottom axis line
 
+
+    plt.savefig(f'{title}{ylabel[0]}.png', transparent=True, bbox_inches='tight', pad_inches=pad_inches)
     # Display the plot without legend
     plt.tight_layout()
     plt.show()
+
+
 
 
 def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7'):
@@ -355,6 +368,54 @@ def extract_average_behavior_durations(group_data, bouts, behavior='Investigatio
     behavior_duration_df.set_index('Subject', inplace=True)
 
     return behavior_duration_df
+
+
+def extract_total_behavior_durations_first_five_minutes(group_data, behavior='Investigation'):
+    data_list = []
+    max_duration = 300  # 300 seconds = 5 minutes
+
+    for block_data in group_data.blocks.values():
+        if hasattr(block_data, 'bout_dict') and block_data.bout_dict:
+            block_data_dict = {'Subject': block_data.subject_name}
+
+            def process_bout_type(event_dict, bout_type):
+                for i, (start_time, end_time) in enumerate(zip(event_dict['introduced'], event_dict['removed']), start=1):
+                    bout_key = f'{bout_type}_{i}'
+
+                    if bout_key in block_data.bout_dict and behavior in block_data.bout_dict[bout_key]:
+                        bout_end_time = start_time + max_duration
+                        total_duration = 0
+
+                        for event in block_data.bout_dict[bout_key][behavior]:
+                            # print(f'Processing {bout_key}: Start {start_time}, End {bout_end_time}')
+                            # print(f'Event Start: {event["Start Time"]}, Event End: {event["End Time"]}')
+
+                            if event['Start Time'] >= start_time and event['Start Time'] < bout_end_time:
+                                event_end_within_window = min(event['End Time'], bout_end_time)
+                                duration_within_window = event_end_within_window - event['Start Time']
+                                # print(f'Duration within window: {duration_within_window}')
+                                total_duration += duration_within_window
+                            else:
+                                print(f'Skipping event outside the 5-minute window: {event["Start Time"]}')
+
+                        block_data_dict[bout_key] = total_duration
+                    else:
+                        block_data_dict[bout_key] = np.nan
+
+            process_bout_type(block_data.short_term_events, 'Short_Term')
+            process_bout_type(block_data.novel_events, 'Novel')
+            process_bout_type(block_data.long_term_events, 'Long_Term')
+
+            data_list.append(block_data_dict)
+
+    behavior_duration_df = pd.DataFrame(data_list)
+    behavior_duration_df.set_index('Subject', inplace=True)
+
+    return behavior_duration_df
+
+
+
+
 
 
 def extract_total_behavior_durations(group_data, bouts, behavior='Investigation'):
@@ -739,11 +800,13 @@ def extract_nth_to_mth_behavior_mean_da(group_data, bouts, behavior='Investigati
 
     return behavior_mean_df
 
-# Exponential decay model
-def exp_decay(t, A, k):
-    return A * np.exp(-k * t)
 
-def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, metric_type='slope', colors=custom_palette, custom_xtick_labels=None):
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.stats import linregress
+
+def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, metric_type='slope', colors=None, custom_xtick_labels=None, custom_legend_labels=None, ylim=None):
     """
     Plots the mean DA from the 1st to 5th investigations across bouts and calculates either the slope or decay constant.
     
@@ -752,17 +815,19 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
                                values during the investigations for a specific bout.
     bouts (list): A list of bout names to plot.
     max_investigations (int): Maximum number of investigations to consider (default is 5).
-    metric_type (str): Whether to compute 'slope' or 'decay' (default is 'slope').
-    colors (list): A list of colors to use for different bouts (default is custom_palette).
+    metric_type (str): Whether to compute 'slope' (default).
+    colors (list): A list of colors to use for different bouts.
     custom_xtick_labels (list): Custom labels for the x-ticks, if provided. Otherwise, defaults to investigation numbers.
+    custom_legend_labels (list): Custom labels for the legend, if provided. Otherwise, defaults to bout names.
+    ylim (tuple): A tuple specifying the y-axis limits (min, max).
     
     Returns:
-    None. Displays the line plot and prints the slope or decay constant for each bout.
+    None. Displays the line plot and prints the slope for each bout.
     """
     # Create a plot for each bout
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(16, 9))
 
-    # Dictionary to store slopes or decay constants for each bout
+    # Dictionary to store slopes for each bout
     metrics = {}
 
     for i, bout in enumerate(bouts):
@@ -774,67 +839,63 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
         mean_across_investigations = np.nanmean(bout_data, axis=0)
 
         # Define time points (investigation numbers)
-        x_values = np.arange(1, len(mean_across_investigations) + 1)  # [1, 2, 3, 4, 5] for investigations
+        x_values = np.arange(1, len(mean_across_investigations) + 1)  # [1, 2, ..., max_investigations]
 
         if metric_type == 'slope':
             # Calculate slope using linear regression (linregress)
             slope, intercept, r_value, p_value, std_err = linregress(x_values, mean_across_investigations)
             metrics[bout] = slope
 
+            # Use custom legend labels if provided, otherwise default to bout names
+            legend_label = custom_legend_labels[i] if custom_legend_labels is not None else bout
+
             # Plot the line for the bout with slope in the label and custom colors
-            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', color=colors[i % len(colors)], label=f'{bout} (slope: {slope:.2f})')
-
-        elif metric_type == 'decay':
-            # Fit the exponential decay model to the data
-            try:
-                popt, _ = curve_fit(exp_decay, x_values, mean_across_investigations, p0=(mean_across_investigations[0], 0.1))
-                A, k = popt  # A is the initial value, k is the decay constant
-                metrics[bout] = k
-
-                # Generate fitted decay curve for plotting
-                fitted_curve = exp_decay(x_values, *popt)
-
-                # Plot the line for the bout with decay constant in the label and custom colors
-                ax.plot(x_values, fitted_curve, marker='o', linestyle='-', color=colors[i % len(colors)], label=f'{bout} (decay: {k:.2f})')
-            except RuntimeError:
-                metrics[bout] = np.nan  # If fitting fails, store NaN
+            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', color=colors[i % len(colors)], 
+                    label=f'{legend_label} (slope: {slope:.2f})', linewidth=4, markersize=20)
 
         else:
-            raise ValueError("Invalid metric_type. Use 'slope' or 'decay'.")
+            raise ValueError("Invalid metric_type. Use 'slope'.")
 
     # Add labels, title, and legend
-    ax.set_xlabel('Investigation Number', fontsize=20)
-    ax.set_ylabel('Mean DA (z-scored dFF)', fontsize=20)
-    ax.set_title(f'Mean DA during 1st to {max_investigations} Investigation Bouts Per Agent({metric_type.capitalize()})', fontsize=20)
+    ax.set_xlabel('Investigation Bout Number', fontsize=44, labelpad=12)
+    ax.set_ylabel('Mean Z-scored ΔF/F', fontsize=44, labelpad=12)
 
-    # Customize tick label sizes
-    ax.tick_params(axis='both', which='major', labelsize=20)
+    # Set y-limits if provided
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
     # Set custom x-tick labels if provided, otherwise default to investigation numbers
     if custom_xtick_labels is not None:
         ax.set_xticks(np.arange(1, len(custom_xtick_labels) + 1))
-        ax.set_xticklabels(custom_xtick_labels, fontsize=20)
+        ax.set_xticklabels(custom_xtick_labels, fontsize=16)
     else:
         ax.set_xticks(np.arange(1, len(x_values) + 1))
-        ax.set_xticklabels(x_values, fontsize=20)
+        ax.set_xticklabels(x_values, fontsize=16)
+
+    # Customize tick label sizes
+    ax.tick_params(axis='both', which='major', labelsize=48)
 
     # Remove the top and right spines
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_linewidth(5)    # Left axis line
+    ax.spines['bottom'].set_linewidth(5)
 
     # Add a legend
-    ax.legend(fontsize=15)
+    ax.legend(fontsize=30)
+
+    # Save the plot
+    plt.savefig('slope.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
 
     # Display the plot
     plt.tight_layout()
     plt.show()
 
-    # Print the slopes or decay constants
+    # Print the slopes
     for bout, metric in metrics.items():
-        if metric_type == 'slope':
-            print(f'Slope for {bout}: {metric:.2f}')
-        elif metric_type == 'decay':
-            print(f'Decay constant for {bout}: {metric:.4f}')
+        print(f'Slope for {bout}: {metric:.2f}')
+
+
 
 
 
@@ -927,13 +988,16 @@ def compute_mean_da_across_trials(group_data, n=15, pre_time=5, post_time=5, bin
     
     return df
 
-def plot_linear_fit_with_error_bars(df, color='blue'):
+
+def plot_linear_fit_with_error_bars(df, color='blue', y_limits=None):
     """
     Plots the mean DA values with SEM error bars, fits a line of best fit,
     and computes the Pearson correlation coefficient.
     
     Parameters:
     - df: A pandas DataFrame containing trial numbers, mean DA signals, and SEMs.
+    - color: The color of the error bars and data points.
+    - y_limits: A tuple (y_min, y_max) to set the y-axis limits. If None, limits are set automatically.
     
     Returns:
     - slope: The slope of the line of best fit.
@@ -954,34 +1018,45 @@ def plot_linear_fit_with_error_bars(df, color='blue'):
     y_fitted = intercept + slope * x_data
     
     # Plot the data with error bars and the fitted line
-    plt.figure(figsize=(10, 6))
-    plt.errorbar(x_data, y_data, yerr=y_err, fmt='o', label='Mean DA per Trial', color=color, capsize=5)
-    plt.plot(x_data, y_fitted, 'r--', label=f'Best Fit Line\n$R^2$ = {r_value**2:.2f}, p = {p_value:.2e}')
-    plt.xlabel('Tone Number', fontsize=24)
-    plt.ylabel('Mean DA Signal (z-score)', fontsize=24)
-    plt.title('Mean DA Signal Over Trials with Best Fit Line', fontsize=10)
-    plt.legend(fontsize=12)
+    plt.figure(figsize=(12, 7))
+    plt.errorbar(x_data, y_data, yerr=y_err, fmt='o', label = 'DA during Port Entry', color=color, 
+                 capsize=10, markersize=20, elinewidth=4, capthick=3)
+    plt.plot(x_data, y_fitted, 'r--', label=f'$R^2$ = {(r_value)**2:.2f}, p = {p_value:.3f}', linewidth=3)
+    plt.xlabel('Tone Number', fontsize=36, labelpad=12)
+    plt.ylabel('Mean Z-scored ΔF/F', fontsize=36, labelpad=12)
+    plt.title('', fontsize=10)
+    plt.legend(fontsize=20)
     
     # Set custom x-ticks from 2 to 16 (whole numbers)
-    plt.xticks(np.arange(1, 17, 2), fontsize=20)
+    plt.xticks(np.arange(1, 14, 2), fontsize=26)
+
+    # Set y-axis limits if provided
+    if y_limits is not None:
+        plt.ylim(y_limits)
 
     # Remove the top and right spines
     ax = plt.gca()  # Get current axes
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    # ax.set_ylim(0,0.8)
+    ax.spines['left'].set_linewidth(2)    # Left axis line
+    ax.spines['bottom'].set_linewidth(2)  # Bottom axis line
+
+    
     # Optionally, adjust tick label sizes
-    ax.tick_params(axis='both', which='major', labelsize=20)
+    ax.tick_params(axis='both', which='major', labelsize=32, width=2)  # Adjust tick label size and width
+
 
     plt.tight_layout()
+    plt.savefig(f'linear.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+
     plt.show()
     
     print(f"Slope: {slope:.4f}, Intercept: {intercept:.4f}")
     print(f"Pearson correlation coefficient (R): {r_value:.4f}, p-value: {p_value:.4e}")
     
+
     return slope, intercept, r_value, p_value
 
-# Example usage:
 
 
 
