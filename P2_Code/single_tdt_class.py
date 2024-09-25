@@ -66,6 +66,7 @@ class TDTData:
     from hab_dishab.hab_dishab_extension import hab_dishab_plot_behavior_event, hab_dishab_extract_intruder_bouts, hab_dishab_find_behavior_events_in_bout 
     from home_cage.home_cage_extension import hc_extract_intruder_bouts, hc_plot_behavior_event, hc_find_behavior_events_in_bout
     from social_pref.social_pref_extension import sp_extract_intruder_events, sp_plot_behavior_event, sp_remove_time_around_subject_introduced
+    from social_pref.social_pref_extension import sp_extract_intruder_events_combined, sp_plot_behavior_event_combined, sp_remove_time_around_subject_introduced
     from defeat.defeat_extension import d_proc_extract_bout, d_proc_find_behavior_events_in_bout, d_proc_plot_behavior_event
     from reward_training.reward_training_extension import rt_plot_behavior_event, find_overlapping_port_entries, align_port_entries_to_sound_cues
 

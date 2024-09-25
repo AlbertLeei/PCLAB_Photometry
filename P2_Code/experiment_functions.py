@@ -145,8 +145,8 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
         capsize=6,  # Increase capsize for larger error bars
         color=bar_color,  # Customizable bar color
         edgecolor='black', 
-        linewidth=4,  # Thicker and darker bar outlines
-        width=0.6,
+        linewidth=5,  # Thicker and darker bar outlines
+        width=0.7,
         error_kw=dict(elinewidth=4, capthick=4,capsize=10,zorder=5)  # Thicker error bars and make them appear above circles
         # elinewidth = 2.5, capthick = 2.5
     )
@@ -177,8 +177,9 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
         ax.set_xticklabels(df.columns, fontsize=26)
 
     # Increase the font size of y-axis tick numbers
-    ax.tick_params(axis='y', labelsize=48)  # Increase y-axis number size
-    ax.tick_params(axis='x', labelsize=38)  # Optional: also increase x-axis number size
+    ax.tick_params(axis='y', labelsize=50)  # Increase y-axis number size
+    ax.tick_params(axis='x', labelsize=50)  # Optional: also increase x-axis number size
+
 
     # Automatically set the y-limits based on the data range if ylim is not provided
     if ylim is None:
@@ -192,6 +193,10 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
         upper_ylim = max_val * 1.1  # Adding a bit of space above the highest value
         
         ax.set_ylim(lower_ylim, upper_ylim)
+        if lower_ylim < 0:
+            ax.axhline(0, color='black', linestyle='--', linewidth=2, zorder=1)
+
+        
     else:
         # If ylim is provided, set the limits to the specified values
         ax.set_ylim(ylim)
@@ -218,8 +223,8 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
 
 
 
-
-def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, ylim=None, bar_color='#00B7D7'):
+def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, custom_xtick_colors=None, ylim=None, 
+                               bar_color='#00B7D7', yticks_increment=None, xlabel='Agent', figsize=(12, 7), pad_inches=0.1, legend=True):
     """
     Plots the mean values during investigations or other events across bouts with error bars for SEM
     and individual subject lines connecting the bouts.
@@ -231,8 +236,12 @@ def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value
     - title (str): The title for the plot.
     - ylabel (str): The label for the y-axis.
     - custom_xtick_labels (list): A list of custom x-tick labels. If not provided, defaults to the column names.
+    - custom_xtick_colors (list): A list of colors for the x-tick labels. Must be the same length as `custom_xtick_labels`.
     - ylim (tuple): A tuple (min, max) to set the y-axis limits. If None, the limits are set automatically based on the data.
     - bar_color (str): A color or list of colors to use for the bars. Defaults to '#00B7D7'.
+    - yticks_increment (float): Increment amount for the y-axis ticks.
+    - xlabel (str): The label for the x-axis.
+    - legend (bool): Whether to display a legend indicating NAc and mPFC. Defaults to True.
     """
 
     # Calculate the mean and SEM for each bout (across all subjects)
@@ -240,7 +249,7 @@ def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value
     sem_values = df.sem()
 
     # Create the plot
-    fig, ax = plt.subplots(figsize=(12, 7))
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Plot the bar plot with error bars (mean and SEM) without adding it to the legend
     bars = ax.bar(
@@ -249,82 +258,91 @@ def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value
         yerr=sem_values, 
         capsize=6,  # Increase capsize for larger error bars
         color=bar_color,  # Custom bar colors
-        linewidth=2,  # Thicker and darker bar outlines
-        width=0.6,
-        hatch='/',  # Add diagonal dashes
-        edgecolor = 'black',
-        error_kw=dict(elinewidth=2.5, capthick=2.5, zorder=5)  # Thicker error bars and make them appear above circles
+        edgecolor='black', 
+        linewidth=5,  # Thicker and darker bar outlines
+        width=0.7,
+        
+        error_kw=dict(elinewidth=4, capthick=4, capsize=10, zorder=5)  # Thicker error bars and make them appear above circles
     )
-
 
     # Plot the lines first with a reduced linewidth
     for i, subject in enumerate(df.index):
-        ax.plot(df.columns, df.loc[subject], linestyle='-', color='gray', alpha=0.5, linewidth=2, zorder=1)
+        ax.plot(df.columns, df.loc[subject], linestyle='-', color='gray', alpha=0.5, linewidth=2.5, zorder=1)
 
     # Then plot the unfilled circle markers with larger size and custom color based on subject name
     for i, subject in enumerate(df.index):
         # Determine color based on subject name
         if subject.startswith('n'):
-            marker_color = '#15616F'
+            marker_color = '#15616F'  # Teal color for NAc
         elif subject.startswith('p'):
-            marker_color = '#FFAF00'
+            marker_color = '#FFAF00'  # Yellow color for mPFC
         else:
             marker_color = 'gray'  # Default color if the subject name doesn't match the criteria
 
-        ax.scatter(df.columns, df.loc[subject], color=marker_color, s=120, alpha=1, linewidth=2, label=subject, zorder=2)
-
+        ax.scatter(df.columns, df.loc[subject], color=marker_color, s=200, alpha=1, linewidth=4, zorder=2)  # Increased dot size to 200
 
     # Add labels, title, and format
-    ax.set_ylabel(ylabel, fontsize=30)
-    ax.set_xlabel('Agent', fontsize=30, labelpad=12)
-    ax.set_title(title, fontsize=20)
-    
+    ax.set_ylabel(ylabel, fontsize=44, labelpad=12)
+    ax.set_xlabel(xlabel, fontsize=44, labelpad=12)
+    ax.set_title(title, fontsize=16)
+
     # Set x-ticks to match the bout labels
     ax.set_xticks(np.arange(len(df.columns)))
 
     # Use custom x-tick labels if provided, otherwise use the column names
     if custom_xtick_labels is not None:
-        ax.set_xticklabels(custom_xtick_labels, fontsize=30)
+        ax.set_xticklabels(custom_xtick_labels, fontsize=28)
+        if custom_xtick_colors is not None:
+            for tick, color in zip(ax.get_xticklabels(), custom_xtick_colors):
+                tick.set_color(color)
     else:
-        ax.set_xticklabels(df.columns, fontsize=30)
+        ax.set_xticklabels(df.columns, fontsize=26)
 
     # Increase the font size of y-axis tick numbers
-    ax.tick_params(axis='y', labelsize=30)  # Increase y-axis number size
-    ax.tick_params(axis='x', labelsize=30)  # Optional: also increase x-axis number size
-
+    ax.tick_params(axis='y', labelsize=50)
+    ax.tick_params(axis='x', labelsize=50)
 
     # Automatically set the y-limits based on the data range if ylim is not provided
     if ylim is None:
-        # Collect all values to determine the y-limits
         all_values = np.concatenate([df.values.flatten(), mean_values.values.flatten()])
         min_val = np.nanmin(all_values)
         max_val = np.nanmax(all_values)
-
-        # Set lower y-limit to 0 if all values are above 0, otherwise set to the minimum value
         lower_ylim = 0 if min_val > 0 else min_val * 1.1
-        upper_ylim = max_val * 1.1  # Adding a bit of space above the highest value
+        upper_ylim = max_val * 1.1
         
         ax.set_ylim(lower_ylim, upper_ylim)
+        if lower_ylim < 0:
+            ax.axhline(0, color='black', linestyle='--', linewidth=2, zorder=1)
     else:
-        # If ylim is provided, set the limits to the specified values
         ax.set_ylim(ylim)
         if ylim[0] < 0:
-            ax.axhline(0, color='gray', linestyle='--', linewidth=2, zorder=3)
+            ax.axhline(0, color='black', linestyle='--', linewidth=2, zorder=1)
 
-    # Add the legend on the right side, outside the plot (but only for individual subjects)
-    # ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), title="Subjects")
-
-    # Add a dashed line at y=0 if it exists in the y-limits and auto-adjusted
-    if ylim is None and lower_ylim < 0:
-        ax.axhline(0, color='gray', linestyle='--', linewidth=2, zorder=3)
+    # Set y-ticks based on yticks_increment
+    if yticks_increment is not None:
+        y_min, y_max = ax.get_ylim()
+        y_ticks = np.arange(np.floor(y_min), np.ceil(y_max) + yticks_increment, yticks_increment)
+        ax.set_yticks(y_ticks)
 
     # Remove the right and top spines
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_linewidth(5)
+    ax.spines['bottom'].set_linewidth(5)
 
-    # Display the plot
-    plt.tight_layout()
+    # Add a custom legend if legend parameter is True
+    if legend:
+        # Add legend for NAc and mPFC, only show these two
+        ax.scatter([], [], color='#15616F', s=200, label='NAc')
+        ax.scatter([], [], color='#FFAF00', s=200, label='mPFC')
+        ax.legend(loc='upper right', fontsize=28, title="Region", title_fontsize=30)
+
+    plt.savefig(f'{ylabel[0]}.png', transparent=True, bbox_inches='tight', pad_inches=pad_inches)
+    # plt.tight_layout()
     plt.show()
+
+
+
 
 
 def extract_average_behavior_durations(group_data, bouts, behavior='Investigation'):
@@ -746,6 +764,122 @@ def plot_approach_vs_aggression(group_data, min_duration=0):
     plt.show()
 
 
+import logging
+
+def extract_nth_to_mth_behavior_mean_da_baseline(self, bouts, behavior='Investigation', 
+                                                n_start=1, n_end=5, pre_time=3, post_time=3):
+    """
+    Extracts the mean DA during the n-th to m-th occurrences of the specified behavior (e.g., 'Investigation')
+    within a specified time window around each event, for each subject and bout. Uses baseline z-score.
+    
+    Parameters:
+    - group_data (object): The object containing bout data for each subject.
+    - bouts (list): A list of bout names to process.
+    - behavior (str): The behavior of interest to extract mean DA for (default is 'Investigation').
+    - n_start (int): The starting occurrence number of the behavior to extract.
+    - n_end (int): The ending occurrence number of the behavior to extract.
+    - pre_time (float): Time before the event onset to include in the mean calculation (in seconds).
+    - post_time (float): Time after the event onset to include in the mean calculation (in seconds).
+    
+    Returns:
+    - pd.DataFrame: A DataFrame where each row represents a subject,
+                    and each column represents the mean DA during the n-th to m-th occurrences 
+                    of the specified behavior for a specific bout, within the defined time window.
+    """
+    # Set up logging
+    logger = logging.getLogger(__name__)
+    if not logger.hasHandlers():
+        # Configure logging only if it hasn't been configured yet
+        logging.basicConfig(level=logging.WARNING, 
+                            format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Initialize an empty list to hold the data for each subject
+    data_list = []
+    
+    # Iterate over each block (subject) in group_data
+    for block_data in self.blocks.values():
+        if hasattr(block_data, 'bout_dict') and block_data.bout_dict:  # Ensure bout_dict exists and is populated
+            # Initialize a dictionary to hold data for the current subject
+            block_data_dict = {'Subject': block_data.subject_name}
+            
+            # Iterate over each specified bout
+            for bout in bouts:
+                # Iterate over the desired range of occurrences
+                for n in range(n_start, n_end + 1):
+                    column_name = f'{bout}_Event_{n}'
+                    
+                    # Check if the bout and behavior exist in the current block
+                    if bout in block_data.bout_dict and behavior in block_data.bout_dict[bout]:
+                        events = block_data.bout_dict[bout][behavior]
+                        
+                        if len(events) >= n:
+                            nth_event = events[n - 1]  # Get the n-th occurrence (1-based index)
+                            
+                            # Extract event timing and DA z-score data
+                            event_start = nth_event.get('Start Time')
+                            event_end = nth_event.get('End Time')
+                            zscore_signal = nth_event.get('zscore')  # Assuming 'zscore' key holds the DA signal array
+                            
+                            # Ensure that required keys exist
+                            if event_start is not None and zscore_signal is not None:
+                                # Retrieve the corresponding timestamps from block_data
+                                timestamps = block_data.timestamps  # Assuming 'timestamps' is a numpy array
+                                
+                                # Define the time window around the event
+                                window_start = event_start - pre_time
+                                window_end = event_start + post_time
+                                
+                                # Ensure window_start and window_end are within the recorded timestamps
+                                if window_start < timestamps[0]:
+                                    logger.warning(f"window_start ({window_start}) is before the first timestamp for subject {block_data.subject_name}, bout '{bout}', event {n}. Assigning NaN.")
+                                    mean_da = np.nan
+                                elif window_end > timestamps[-1]:
+                                    logger.warning(f"window_end ({window_end}) is after the last timestamp for subject {block_data.subject_name}, bout '{bout}', event {n}. Assigning NaN.")
+                                    mean_da = np.nan
+                                else:
+                                    # Find indices corresponding to the window
+                                    window_indices = np.where((timestamps >= window_start) & (timestamps <= window_end))[0]
+                                    
+                                    # Check if there are valid indices
+                                    if len(window_indices) == 0:
+                                        logger.warning(f"No DA data found within the window for subject {block_data.subject_name}, bout '{bout}', event {n}. Assigning NaN.")
+                                        mean_da = np.nan
+                                    else:
+                                        # Extract the zscore DA values within the window
+                                        da_values = zscore_signal[window_indices]
+                                        
+                                        # Calculate the mean DA within the window
+                                        mean_da = np.nanmean(da_values)
+                            else:
+                                logger.warning(f"Missing 'Start Time' or 'zscore' data for subject {block_data.subject_name}, bout '{bout}', event {n}. Assigning NaN.")
+                                mean_da = np.nan
+                        else:
+                            logger.warning(f"Subject {block_data.subject_name} does not have event number {n} in bout '{bout}'. Assigning NaN.")
+                            mean_da = np.nan
+                        
+                        # Assign the mean DA to the corresponding column
+                        block_data_dict[column_name] = mean_da
+                    else:
+                        # If bout or behavior is missing, assign NaN for this event
+                        logger.warning(f"Subject {block_data.subject_name} does not have bout '{bout}' or behavior '{behavior}'. Assigning NaN for {column_name}.")
+                        block_data_dict[column_name] = np.nan
+            
+            # Append the subject's data to the list
+            data_list.append(block_data_dict)
+    
+    # Convert the list of dictionaries to a DataFrame
+    behavior_mean_df = pd.DataFrame(data_list)
+    
+    # Set 'Subject' as the DataFrame index
+    behavior_mean_df.set_index('Subject', inplace=True)
+    
+    return behavior_mean_df
+
+
+
+
+
+
 def extract_nth_to_mth_behavior_mean_da(group_data, bouts, behavior='Investigation', n_start=1, n_end=5):
     """
     Extracts the mean DA during the n-th to m-th occurrences of the specified behavior (e.g., 'Investigation')
@@ -802,9 +936,6 @@ def extract_nth_to_mth_behavior_mean_da(group_data, bouts, behavior='Investigati
 
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-from scipy.stats import linregress
 
 def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, metric_type='slope', colors=None, custom_xtick_labels=None, custom_legend_labels=None, ylim=None):
     """
