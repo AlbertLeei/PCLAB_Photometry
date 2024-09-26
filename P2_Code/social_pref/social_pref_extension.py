@@ -3,7 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import seaborn as sns
-from scipy import stats
+# from scipy import stats
+
+import sys
+import scipy.stats as stats
+from matplotlib.lines import Line2D  # Added import
+
 
 
 def sp_extract_intruder_events(self, behavior_csv_path, cup_assignment_csv_path):
@@ -963,107 +968,346 @@ def sp_extract_nth_behavior_mean_da_corrected(group_data, behavior, n=1, max_dur
 
 
 
+def sp_plot_first_investigation_vs_zscore_4s(self, bouts=None, behavior_name='investigation', legend_names=None):
+        """
+        Plot the first occurrence of the specified behavior duration vs. mean Z-scored ΔF/F relative to the event onset 
+        within a fixed 4-second window for all blocks, color-coded by bout type, with custom legend names and enhanced plot formatting.
 
-def sp_scatter_plot_behavior_vs_da(self, behavior='sniff', bouts=None, legend_names=None):
+        Parameters:
+        - behavior_name (str): The name of the behavior to analyze (default is 'investigation').
+        - bouts (list): A list of bout names to include in the analysis. If None, defaults to ['short_term', 'novel'].
+        - legend_names (dict): A dictionary to map bout names to custom legend labels. If None, defaults to standard labels.
+        """
+        # Default bouts if none are provided
+        if bouts is None:
+            bouts = ['short_term', 'novel']
+
+        # Default legend names if none are provided
+        if legend_names is None:
+            legend_names = {
+                'short_term': 'Short-Term',
+                'novel': 'Novel Object',
+                'long_term': 'Long-Term',
+                'nothing': 'Empty'
+            }
+
+        # Define the custom colors
+        bout_colors = {
+            'short_term': '#00B7D7',
+            'novel': '#E06928',
+            'long_term': '#0045A6',
+            'nothing': '#A839A4'
+        }
+
+        mean_zscored_dffs = []
+        behavior_durations = []
+        bout_names_collected = []
+
+        # Iterate through each block
+        for block_name, block_data in self.blocks.items():
+            # Ensure zscore and timestamps are available
+            if block_data.zscore is None or block_data.timestamps is None:
+                print(f"Block {block_name} is missing zscore or timestamps data. Skipping.")
+                continue
+
+            # Iterate through each specified bout
+            for bout in bouts:
+                # Check if the bout exists in the behavior_event_dict
+                if bout not in block_data.behavior_event_dict:
+                    print(f"Bout '{bout}' not found in block '{block_name}'. Skipping.")
+                    continue
+
+                # Check if the specified behavior exists for the bout
+                if behavior_name not in block_data.behavior_event_dict[bout]:
+                    print(f"Behavior '{behavior_name}' not found in bout '{bout}' for block '{block_name}'. Skipping.")
+                    continue
+
+                investigation_events = block_data.behavior_event_dict[bout][behavior_name]
+
+                if len(investigation_events) == 0:
+                    print(f"No '{behavior_name}' events found in bout '{bout}' for block '{block_name}'. Skipping.")
+                    continue
+
+                # Get the first occurrence of the behavior
+                first_event = investigation_events[0]
+                event_start = first_event['Start Time']
+                event_duration = first_event['Duration']
+
+                # Define the fixed 4-second window starting from the event onset
+                window_start = event_start
+                window_end = event_start + 4.0
+
+                # Ensure the window does not exceed the available timestamps
+                if window_end > block_data.timestamps[-1]:
+                    print(f"Window end time {window_end}s exceeds the available data in block '{block_name}'. Adjusting window.")
+                    window_end = block_data.timestamps[-1]
+
+                # Find indices within the window
+                window_mask = (block_data.timestamps >= window_start) & (block_data.timestamps <= window_end)
+
+                if not np.any(window_mask):
+                    print(f"No data found in the window [{window_start}, {window_end}]s for block '{block_name}', bout '{bout}'. Skipping.")
+                    continue
+
+                # Extract zscore data within the window
+                zscore_window = block_data.zscore[window_mask]
+
+                # Calculate the mean z-scored ΔF/F over the window
+                mean_zscore = np.mean(zscore_window)
+
+                # Store the results
+                mean_zscored_dffs.append(mean_zscore)
+                behavior_durations.append(event_duration)
+                bout_names_collected.append(bout)
+
+        # Convert lists to numpy arrays
+        mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
+        behavior_durations = np.array(behavior_durations, dtype=np.float64)
+        bout_names_collected = np.array(bout_names_collected)
+
+        # Check if there are valid data points
+        if len(mean_zscored_dffs) == 0 or len(behavior_durations) == 0:
+            print("No valid data points for correlation and plotting.")
+            return
+
+        # Calculate Pearson correlation
+        r, p = stats.pearsonr(mean_zscored_dffs, behavior_durations)
+        r_squared = r ** 2  # Calculate r-squared
+
+        # Step 3: Plotting the scatter plot
+        plt.figure(figsize=(16, 9))
+
+        # Plot each bout separately
+        for bout in bouts:
+            # Create a mask for each bout
+            mask = bout_names_collected == bout
+            plt.scatter(
+                mean_zscored_dffs[mask], 
+                behavior_durations[mask],
+                color=bout_colors.get(bout, '#000000'),  # Default to black if bout color not found
+                label=legend_names.get(bout, bout), 
+                alpha=1, 
+                s=600, 
+                edgecolor='black', 
+                linewidth=2
+            )
+
+        # Adding the regression line with a consistent dashed style
+        slope, intercept = np.polyfit(mean_zscored_dffs, behavior_durations, 1)
+        regression_x = np.linspace(mean_zscored_dffs.min(), mean_zscored_dffs.max(), 100)
+        regression_y = slope * regression_x + intercept
+        plt.plot(regression_x, regression_y, color='black', linestyle='--', linewidth=4, label='Regression Line')
+
+        # Add labels and title with larger font sizes
+        plt.xlabel('Mean Z-scored ΔF/F', fontsize=40, labelpad=20)
+        plt.ylabel(f'{behavior_name.capitalize()} Duration (s)', fontsize=40, labelpad=20)
+        plt.title(f'First {behavior_name.capitalize()} Duration vs. Mean Z-scored ΔF/F', fontsize=45, pad=30)
+
+        # Modify x-ticks and y-ticks to be larger
+        plt.xticks(fontsize=40)
+        plt.yticks(fontsize=40)
+
+        # Display Pearson correlation, r², and number of events in the legend
+        correlation_text = f'r = {r:.3f}\nr² = {r_squared:.3f}\nn = {len(mean_zscored_dffs)} events'
+        custom_lines = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=20, markeredgecolor='black') 
+            for bout in bouts
+        ]
+        custom_lines.append(Line2D([0], [0], linestyle='--', color='black', linewidth=4))
+        legend_labels = [legend_names.get(bout, bout) for bout in bouts] + [correlation_text]
+
+        # Add a legend with bout names and correlation inside the plot at the top left
+        plt.legend(custom_lines, legend_labels, title='Bout', loc='upper left', fontsize=24, title_fontsize=28)
+
+        # Remove top and right spines and increase the linewidth of the remaining spines
+        sns.despine()
+        ax = plt.gca()
+        ax.spines['left'].set_linewidth(5)
+        ax.spines['bottom'].set_linewidth(5)
+        ax.spines['right'].set_linewidth(5)
+        ax.spines['top'].set_linewidth(5)
+
+        plt.tight_layout()
+        plt.savefig('Scatter_First_Investigation_vs_Zscore.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+        plt.show()
+
+
+
+def sp_plot_average_investigation_vs_zscore_4s(self, bouts=None, behavior_name='investigation', legend_names=None):
     """
-    Plots the relationship between the duration of a specified behavior and the mean DA (ΔF/F) during that behavior 
-    across different bouts for the social preference experiment.
+    Plot the average duration of the specified behavior vs. average mean Z-scored ΔF/F relative to the event onset 
+    within a fixed 4-second window for all blocks, color-coded by bout type, with custom legend names and enhanced plot formatting.
 
     Parameters:
-    - behavior (str): The behavior to analyze (e.g., 'sniff', 'chew').
-    - bouts (list): A list of bout names to include in the analysis.
-    - behavior_event (str): The behavior event to correlate with the mean DA (default is 'investigation').
-    - legend_names (dict): A dictionary to map bout names to custom legend labels.
+    - behavior_name (str): The name of the behavior to analyze (default is 'investigation').
+    - bouts (list): A list of bout names to include in the analysis. If None, defaults to ['short_term', 'novel'].
+    - legend_names (dict): A dictionary to map bout names to custom legend labels. If None, defaults to standard labels.
     """
+    # Default bouts if none are provided
     if bouts is None:
-        bouts = ['Novel', 'Long_Term', 'Short_Term', 'Nothing']
+        bouts = ['short_term', 'novel']
 
+    # Default legend names if none are provided
     if legend_names is None:
-        legend_names = {'Novel': 'Novel Object', 'Long_Term': 'Long-Term', 'Short_Term': 'Short-Term', 'Nothing': 'Empty'}
+        legend_names = {
+            'short_term': 'Short-Term',
+            'novel': 'Novel Object',
+            'long_term': 'Long-Term',
+            'nothing': 'Empty'
+        }
 
-    # Define custom colors for bouts
-    bout_colors = {'Novel': '#E06928', 'Long_Term': '#00B7D7', 'Short_Term': '#1F78B4', 'Nothing': '#33A02C'}
+    # Define the custom colors
+    bout_colors = {
+        'short_term': '#00B7D7',
+        'novel': '#E06928',
+        'long_term': '#0045A6',
+        'nothing': '#A839A4'
+    }
 
-    mean_das = []
-    behavior_durations = []
-    bout_names = []
+    # Initialize dictionaries to hold durations and z-scores per bout
+    bout_durations = {bout: [] for bout in bouts}
+    bout_zscores = {bout: [] for bout in bouts}
 
-    # Loop through each block in the dataset
+    # Iterate through each block
     for block_name, block_data in self.blocks.items():
+        # Ensure zscore and timestamps are available
+        if block_data.zscore is None or block_data.timestamps is None:
+            print(f"Block {block_name} is missing zscore or timestamps data. Skipping.")
+            continue
+
+        # Iterate through each specified bout
         for bout in bouts:
-            # Check if the bout and behavior exist in the data
-            if bout in block_data.behavior_event_dict and behavior in block_data.behavior_event_dict[bout]:
-                behavior_events = block_data.behavior_event_dict[bout][behavior]
+            # Check if the bout exists in the behavior_event_dict
+            if bout not in block_data.behavior_event_dict:
+                print(f"Bout '{bout}' not found in block '{block_name}'. Skipping.")
+                continue
 
-                if len(behavior_events) > 0:
-                    # Get the first occurrence of the behavior
-                    first_event = behavior_events[0]
-                    event_duration = first_event['Duration']
+            # Check if the specified behavior exists for the bout
+            if behavior_name not in block_data.behavior_event_dict[bout]:
+                print(f"Behavior '{behavior_name}' not found in bout '{bout}' for block '{block_name}'. Skipping.")
+                continue
 
-                    # Limit the analysis to the maximum duration (e.g., 5 seconds)
-                    event_duration_limited = min(event_duration, 5.0)
+            investigation_events = block_data.behavior_event_dict[bout][behavior_name]
 
-                    # Calculate mean DA (ΔF/F) during the behavior event
-                    event_start = first_event['Start Time']
-                    event_end = event_start + event_duration_limited
+            if len(investigation_events) == 0:
+                print(f"No '{behavior_name}' events found in bout '{bout}' for block '{block_name}'. Skipping.")
+                continue
 
-                    # Get DA signal (z-score) within the event window
-                    da_indices = (block_data.timestamps >= event_start) & (block_data.timestamps <= event_end)
-                    mean_da = np.mean(block_data.zscore[da_indices]) if np.any(da_indices) else np.nan
+            # Get the first occurrence of the behavior
+            first_event = investigation_events[0]
+            event_start = first_event['Start Time']
+            event_duration = first_event['Duration']
 
-                    # Store the results if valid
-                    if not np.isnan(mean_da):
-                        mean_das.append(mean_da)
-                        behavior_durations.append(event_duration)
-                        bout_names.append(bout)
+            # Define the fixed 4-second window starting from the event onset
+            window_start = event_start
+            window_end = event_start + 4.0
 
-    # Convert lists to numpy arrays
-    mean_das = np.array(mean_das)
-    behavior_durations = np.array(behavior_durations)
-    bout_names = np.array(bout_names)
+            # Ensure the window does not exceed the available timestamps
+            if window_end > block_data.timestamps[-1]:
+                print(f"Window end time {window_end}s exceeds the available data in block '{block_name}'. Adjusting window.")
+                window_end = block_data.timestamps[-1]
 
-    if len(mean_das) == 0 or len(behavior_durations) == 0:
-        print("No valid data points for correlation.")
+            # Find indices within the window
+            window_mask = (block_data.timestamps >= window_start) & (block_data.timestamps <= window_end)
+
+            if not np.any(window_mask):
+                print(f"No data found in the window [{window_start}, {window_end}]s for block '{block_name}', bout '{bout}'. Skipping.")
+                continue
+
+            # Extract zscore data within the window
+            zscore_window = block_data.zscore[window_mask]
+
+            # Calculate the mean z-scored ΔF/F over the window
+            mean_zscore = np.mean(zscore_window)
+
+            # Store the results
+            bout_durations[bout].append(event_duration)
+            bout_zscores[bout].append(mean_zscore)
+
+    # Compute average durations and z-scores per bout
+    avg_durations = {}
+    avg_zscores = {}
+    n_events = {}
+
+    for bout in bouts:
+        durations = bout_durations[bout]
+        zscores = bout_zscores[bout]
+        if len(durations) > 0:
+            avg_durations[bout] = np.mean(durations)
+            avg_zscores[bout] = np.mean(zscores)
+            n_events[bout] = len(durations)
+        else:
+            avg_durations[bout] = np.nan
+            avg_zscores[bout] = np.nan
+            n_events[bout] = 0
+            print(f"No valid '{behavior_name}' events for bout '{bout}' across all blocks.")
+
+    # Prepare data for plotting
+    plot_bouts = [bout for bout in bouts if not np.isnan(avg_durations[bout]) and not np.isnan(avg_zscores[bout])]
+    plot_durations = [avg_durations[bout] for bout in plot_bouts]
+    plot_zscores = [avg_zscores[bout] for bout in plot_bouts]
+    plot_n = [n_events[bout] for bout in plot_bouts]
+
+    # Check if there are valid data points
+    if len(plot_bouts) < 2:
+        print("Not enough valid data points for correlation and plotting.")
         return
 
     # Calculate Pearson correlation
-    r, p = stats.pearsonr(mean_das, behavior_durations)
+    r, p = stats.pearsonr(plot_zscores, plot_durations)
+    r_squared = r ** 2  # Calculate r-squared
 
     # Step 3: Plotting the scatter plot
     plt.figure(figsize=(16, 9))
 
-    for bout in bouts:
-        # Create a mask for each bout
-        mask = bout_names == bout
-        plt.scatter(mean_das[mask], behavior_durations[mask],
-                    color=bout_colors[bout], label=legend_names.get(bout, bout), alpha=0.6, s=300)
+    # Plot each bout separately
+    for bout, duration, zscore in zip(plot_bouts, plot_durations, plot_zscores):
+        plt.scatter(
+            zscore, 
+            duration,
+            color=bout_colors.get(bout, '#000000'),  # Default to black if bout color not found
+            label=legend_names.get(bout, bout), 
+            alpha=1, 
+            s=600, 
+            edgecolor='black', 
+            linewidth=2
+        )
 
     # Adding the regression line with a consistent dashed style
-    slope, intercept = np.polyfit(mean_das, behavior_durations, 1)
-    plt.plot(mean_das, slope * mean_das + intercept, color='black', linestyle='--', linewidth=4)
+    slope, intercept = np.polyfit(plot_zscores, plot_durations, 1)
+    regression_x = np.linspace(min(plot_zscores), max(plot_zscores), 100)
+    regression_y = slope * regression_x + intercept
+    plt.plot(regression_x, regression_y, color='black', linestyle='--', linewidth=4, label='Regression Line')
 
     # Add labels and title with larger font sizes
-    plt.xlabel(f'Mean Z-scored ΔF/F', fontsize=40, labelpad=20)
-    plt.ylabel(f'{behavior.capitalize()} Duration (s)', fontsize=40, labelpad=20)
+    plt.xlabel('Mean Z-scored ΔF/F', fontsize=40, labelpad=20)
+    plt.ylabel(f'Average {behavior_name.capitalize()} Duration (s)', fontsize=40, labelpad=20)
+    plt.title(f'Average {behavior_name.capitalize()} Duration vs. Mean Z-scored ΔF/F', fontsize=45, pad=30)
 
     # Modify x-ticks and y-ticks to be larger
     plt.xticks(fontsize=40)
     plt.yticks(fontsize=40)
 
-    # Display Pearson correlation and p-value in the legend
-    correlation_text = f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_das)} events'
-    legend_entries = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors[bout], markersize=30) for bout in bouts]
-    legend_labels = [legend_names.get(bout, bout) for bout in bouts]
-    legend_entries.append(plt.Line2D([0], [0], linestyle='--', color='black', linewidth=4))
-    legend_labels.append(correlation_text)
+    # Display Pearson correlation, r², and number of events in the legend
+    correlation_text = f'r = {r:.3f}\nr² = {r_squared:.3f}\nn = {len(plot_bouts)} events'
+    custom_lines = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=20, markeredgecolor='black') 
+        for bout in plot_bouts
+    ]
+    custom_lines.append(Line2D([0], [0], linestyle='--', color='black', linewidth=4))
+    legend_labels = [legend_names.get(bout, bout) for bout in plot_bouts] + [correlation_text]
 
     # Add a legend with bout names and correlation inside the plot at the top left
-    plt.legend(legend_entries, legend_labels, title='Bout', loc='upper left', fontsize=24, title_fontsize=28)
+    plt.legend(custom_lines, legend_labels, title='Bout', loc='upper left', fontsize=24, title_fontsize=28)
 
     # Remove top and right spines and increase the linewidth of the remaining spines
     sns.despine()
-    plt.gca().spines['left'].set_linewidth(5)
-    plt.gca().spines['bottom'].set_linewidth(5)
+    ax = plt.gca()
+    ax.spines['left'].set_linewidth(5)
+    ax.spines['bottom'].set_linewidth(5)
+    ax.spines['right'].set_linewidth(5)
+    ax.spines['top'].set_linewidth(5)
 
     plt.tight_layout()
+    plt.savefig('Scatter_Average_Investigation_vs_Zscore.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
     plt.show()

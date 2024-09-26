@@ -69,7 +69,7 @@ class TDTData:
     from social_pref.social_pref_extension import sp_extract_intruder_events_combined, sp_plot_behavior_event_combined, sp_remove_time_around_subject_introduced
     from defeat.defeat_extension import d_proc_extract_bout, d_proc_find_behavior_events_in_bout, d_proc_plot_behavior_event
     from reward_training.reward_training_extension import rt_plot_behavior_event, find_overlapping_port_entries, align_port_entries_to_sound_cues
-
+    from aggression.aggression_extension import ag_extract_aggression_events
 
     def print_behaviors(self):
         """

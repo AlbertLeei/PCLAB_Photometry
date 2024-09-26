@@ -33,10 +33,12 @@ class GroupTDTData:
     from hab_dishab.hab_dishab_extension import hab_dishab_processing, hab_dishab_plot_individual_behavior
     # from P2_Code.social_pref. import 
     from home_cage.home_cage_extension import hc_processing, hc_plot_individual_behavior
-    from social_pref.social_pref_extension import sp_processing, sp_compute_first_bout_peth_all_blocks, sp_scatter_plot_behavior_vs_da
+    from social_pref.social_pref_extension import sp_processing, sp_compute_first_bout_peth_all_blocks,sp_plot_first_investigation_vs_zscore_4s
     from defeat.defeat_extension import d_proc_processing, d_proc_plot_individual_behavior
     from reward_training.reward_training_extension import rt_processing, rt_plot_individual_behavior, rt_extract_and_plot, rt_compute_peth_per_event, rt_plot_peth_per_event
     from experiment_functions import extract_nth_to_mth_behavior_mean_da_baseline
+    from defeat.defeat_extension import plot_peth_individual_traces
+    from aggression.aggression_extension import ag_proc_processing_all_blocks, compute_nth_bout_peth_all_blocks_standard_zscore
 
 
     def load_blocks(self):
@@ -107,9 +109,11 @@ class GroupTDTData:
             # print(baseline_end) 
             # tdt_data_obj.compute_zscore(method = 'baseline', baseline_start = baseline_start, baseline_end = baseline_end)
             tdt_data_obj.compute_zscore(method = 'standard')
-            tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
-            # tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
-            tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
+            # tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
+            # tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
+            tdt_data_obj.ag_extract_aggression_events(csv_file_path)
+            tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
+
 
             tdt_data_obj.verify_signal()
             # tdt_data_obj.zscore = None
@@ -475,24 +479,29 @@ class GroupTDTData:
         plt.show()
 
 
-    def plot_first_investigation_vs_dff_4s(self, bouts=None, behavior_name='Investigation', legend_names=None):
+    def plot_first_investigation_vs_dff_4s(self, bouts=None, behavior_name='Investigation', legend_names=None, ylim=None, legend_loc='upper left'):
         """
         Plot the first occurrence of the specified behavior duration vs. mean Z-scored ΔF/F relative to the baseline during 
         a fixed 4-second window for all blocks, color-coded by bout type, with custom legend names and enhanced plot formatting.
 
         Parameters:
         behavior_name (str): The name of the behavior to analyze (default is 'Investigation').
-        bouts (list): A list of bout names to include in the analysis.
-        legend_names (dict): A dictionary to map bout names to custom legend labels.
+        bouts (list): A list of bout names to include in the analysis. If None, defaults to ['Short_Term_1', 'Novel_1'].
+        legend_names (dict): A dictionary to map bout names to custom legend labels. If None, defaults to standard labels.
+        ylim (tuple): A tuple specifying the y-axis limits (min, max). If None, default limits are used.
+        legend_loc (str): The location of the legend. Defaults to 'upper left'.
         """
+        # Default bouts if none are provided
         if bouts is None:
             bouts = ['Short_Term_1', 'Novel_1']
 
+        # Default legend names if none are provided
         if legend_names is None:
-            legend_names = {'Short_Term_1': 'Short-Term', 'Novel_1': 'Novel'}
+            legend_names = {'Short_Term_1': 'Acq - ST', 'Novel_1': 'Novel', 'Short_Term_2': 'Short-term', 'Long_Term_1': 'Long-Term'}
 
         # Define the custom colors
-        bout_colors = {'Short_Term_1': '#00B7D7', 'Novel_1': '#E06928'}
+        bout_colors = {'Short_Term_1': '#00B7D7', 'Novel_1': '#E06928',
+                    'Short_Term_2': '#0045A6', 'Long_Term_1': '#A839A4'}
 
         mean_zscored_dffs = []
         behavior_durations = []
@@ -510,6 +519,9 @@ class GroupTDTData:
         # Step 2: Extract mean Z-scored ΔF/F relative to baseline for a fixed 4-second window
         for block_name, bout_data in self.peri_event_data_all_blocks.items():
             for bout, peri_event_data in bout_data.items():
+                if bout not in bouts:
+                    continue  # Skip bouts not selected by the user
+
                 time_axis = peri_event_data['time_axis']
                 zscore = peri_event_data['zscore']
 
@@ -550,15 +562,20 @@ class GroupTDTData:
             # Create a mask for each bout
             mask = bout_names == bout
             plt.scatter(mean_zscored_dffs[mask], behavior_durations[mask],
-                        color=bout_colors[bout], label=legend_names.get(bout, bout), alpha=0.6, s=300)
+                        color=bout_colors.get(bout, '#000000'),  # Default to black if bout color not found
+                        label=legend_names.get(bout, bout), alpha=1, s=800, edgecolor='black', linewidth=6)
 
         # Adding the regression line with a consistent dashed style
         slope, intercept = np.polyfit(mean_zscored_dffs, behavior_durations, 1)
         plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--', linewidth=4)
 
         # Add labels and title with larger font sizes
-        plt.xlabel(f'Mean Z-scored ΔF/F', fontsize=40, labelpad=20)
-        plt.ylabel(f'{behavior_name} Duration (s)', fontsize=40, labelpad=20)
+        plt.xlabel(f'Mean Z-scored ΔF/F', fontsize=44, labelpad=20)
+        plt.ylabel(f'Bout Duration (s)', fontsize=44, labelpad=20)
+
+        # Apply y-axis limits if provided
+        if ylim is not None:
+            plt.ylim(ylim)
 
         # Modify x-ticks and y-ticks to be larger
         plt.xticks(fontsize=40)
@@ -566,13 +583,13 @@ class GroupTDTData:
 
         # Display Pearson correlation and p-value in the legend
         correlation_text = f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} events'
-        legend_entries = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors[bout], markersize=30) for bout in bouts]
+        legend_entries = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=30, markeredgewidth=2, markeredgecolor='black') for bout in bouts]
         legend_labels = [legend_names.get(bout, bout) for bout in bouts]
         legend_entries.append(plt.Line2D([0], [0], linestyle='--', color='black', linewidth=4))
         legend_labels.append(correlation_text)
 
-        # Add a legend with bout names and correlation inside the plot at the top left
-        plt.legend(legend_entries, legend_labels, title='Bout', loc='upper left', fontsize=24, title_fontsize=28)
+        # Add a legend with bout names and correlation inside the plot at the specified location
+        plt.legend(legend_entries, legend_labels, title='Bout', loc=legend_loc, fontsize=24, title_fontsize=28)
 
         # Remove top and right spines and increase the linewidth of the remaining spines
         sns.despine()
@@ -583,6 +600,7 @@ class GroupTDTData:
 
         plt.tight_layout()
         plt.show()
+
 
 
 
@@ -729,66 +747,92 @@ class GroupTDTData:
 
 
     '''********************************** PETHS **********************************'''
-    def compute_nth_bout_peth_all_blocks(self, behavior_name='Investigation', nth_occurrence=1, bouts=None, pre_time=5, post_time=5, bin_size=0.1):
-        """
-        Computes the peri-event time histogram (PETH) data for the nth occurrence of a given event in each bout.
-        Uses the TDTData class's `compute_nth_bout_baseline_peth` function and stores the peri-event data (zscore, dFF, and time axis)
-        for each bout as a class variable.
+    def compute_nth_bout_peth_all_blocks(
+            self, 
+            behavior_name='Investigation', 
+            nth_occurrence=1, 
+            bouts=None, 
+            pre_time=5, 
+            post_time=5, 
+            bin_size=0.1
+        ):
+            """
+            Computes the peri-event time histogram (PETH) data for the nth occurrence of a given behavior in each bout using standard z-score.
+            Stores the peri-event data (zscore and time axis) for each bout as a class variable.
 
-        Parameters:
-        behavior_name (str): The name of the event to generate the PETH for (e.g., 'Investigation').
-        nth_occurrence (int): The occurrence number of the behavior to analyze (1 for first occurrence, 2 for second, etc.).
-        bouts (list): A list of bout names to process.
-        pre_time (float): The time in seconds to include before the event.
-        post_time (float): The time in seconds to include after the event.
-        bin_size (float): The size of each bin in the histogram (in seconds).
+            Parameters:
+            - behavior_name (str): The name of the behavior to generate the PETH for (e.g., 'Aggression').
+            - nth_occurrence (int): The occurrence number of the behavior to analyze (1 for first occurrence, 2 for second, etc.).
+            - bouts (list): A list of bout names to process. If None, defaults to ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1'].
+            - pre_time (float): The time in seconds to include before the event.
+            - post_time (float): The time in seconds to include after the event.
+            - bin_size (float): The size of each bin in the histogram (in seconds).
 
-        Returns:
-        None. Stores peri-event data for all blocks and bouts as a class variable.
-        """
-        if bouts is None:
-            bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']  # Default to these bouts if none provided
+            Returns:
+            - None. Stores peri-event data for all blocks and bouts in self.peri_event_data_all_blocks.
+            """
+            if bouts is None:
+                bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']  # Default bouts
 
-        self.peri_event_data_all_blocks = {}  # Initialize a dictionary to store PETH data for each bout
+            peri_event_data_all_blocks = {}  # Temporary dictionary to store PETH data
 
-        # Track the shortest time axis across all blocks and bouts
-        min_time_length = float('inf')
+            # Initialize to track the minimum number of bins per bout
+            min_num_bins_per_bout = {bout: float('inf') for bout in bouts}
 
-        # Loop through each block in self.blocks
-        for block_name, block_data in self.blocks.items():
-            self.peri_event_data_all_blocks[block_name] = {}  # Initialize PETH storage for each block
+            # Iterate through each block in group_data
+            for block_name, block_data in self.blocks.items():
+                # Initialize dictionary for the current block
+                peri_event_data_all_blocks[block_name] = {}
 
-            # Loop through each bout in the specified bouts
-            for bout in bouts:
-                if bout in block_data.bout_dict and behavior_name in block_data.bout_dict[bout]:
-                    # Use the `compute_nth_bout_baseline_peth` method to compute the PETH for the nth event in the bout
-                    peri_event_data = block_data.compute_nth_bout_baseline_peth(
-                        bout_name=bout, 
-                        behavior_name=behavior_name, 
-                        nth_event=nth_occurrence, 
-                        pre_time=pre_time, 
-                        post_time=post_time, 
-                        bin_size=bin_size
-                    )
+                # Iterate through each specified bout
+                for bout in bouts:
+                    # Check if the bout and behavior exist in the current block
+                    if bout in block_data.bout_dict and behavior_name in block_data.bout_dict[bout]:
+                        # Compute the PETH for the nth occurrence
+                        peri_event_data = block_data.compute_nth_bout_baseline_peth(
+                            bout_name=bout, 
+                            behavior_name=behavior_name, 
+                            nth_event=nth_occurrence, 
+                            pre_time=pre_time, 
+                            post_time=post_time, 
+                            bin_size=bin_size
+                        )
 
-                    if peri_event_data:
-                        self.peri_event_data_all_blocks[block_name][bout] = peri_event_data
+                        if peri_event_data:
+                            # Store the PETH data
+                            peri_event_data_all_blocks[block_name][bout] = peri_event_data
 
-                        # Check the time axis length to find the shortest one
-                        time_axis = peri_event_data['time_axis']
-                        if len(time_axis) < min_time_length:
-                            min_time_length = len(time_axis)
+                            # Update the minimum number of bins for this bout
+                            num_bins = len(peri_event_data['time_axis'])
+                            if num_bins < min_num_bins_per_bout[bout]:
+                                min_num_bins_per_bout[bout] = num_bins
+                        else:
+                            print(f"No valid peri-event data found for block '{block_name}', bout '{bout}'.")
                     else:
-                        print(f"No valid peri-event data found for {block_name}, {bout}.")
-                else:
-                    print(f"No {behavior_name} found in {bout} for {block_name}.")
+                        print(f"No '{behavior_name}' behavior found in bout '{bout}' for block '{block_name}'.")
 
-        # Truncate all traces to the shortest time axis length to ensure consistency
-        for block_name, bout_data in self.peri_event_data_all_blocks.items():
-            for bout, peri_event_data in bout_data.items():
-                for key in ['zscore', 'dFF', 'time_axis']:  # Truncate zscore, dFF, and time_axis
-                    peri_event_data[key] = peri_event_data[key][:min_time_length]
-
+            # After processing all blocks and bouts, truncate all PETHs per bout to the minimum number of bins for that bout
+            for bout in bouts:
+                min_bins = min_num_bins_per_bout[bout]
+                if min_bins == float('inf'):
+                    # No PETHs were computed for this bout
+                    print(f"No PETH data computed for bout '{bout}'. Skipping truncation.")
+                    continue
+                for block_name, bouts_data in peri_event_data_all_blocks.items():
+                    if bout in bouts_data:
+                        peth_data = bouts_data[bout]
+                        current_bins = len(peth_data['time_axis'])
+                        if current_bins > min_bins:
+                            # Truncate the time_axis and zscore lists to min_bins
+                            peth_data['time_axis'] = peth_data['time_axis'][:min_bins]
+                            peth_data['zscore'] = peth_data['zscore'][:min_bins]
+                            print(f"Truncated PETH for block '{block_name}', bout '{bout}' to {min_bins} bins.")
+                        elif current_bins < min_bins:
+                            # This should not happen if min_bins is correctly tracked
+                            print(f"Warning: Block '{block_name}', bout '{bout}' has fewer bins ({current_bins}) than min_bins ({min_bins}).")
+                            # Optionally, handle this case (e.g., pad with NaNs)
+            # Store the computed PETH data in the class attribute
+            self.peri_event_data_all_blocks = peri_event_data_all_blocks
 
     def plot_1st_event_peth_all_traces(self, signal_type='zscore'):
         """
@@ -910,7 +954,8 @@ class GroupTDTData:
                                 display_pre_time=3, 
                                 display_post_time=3, 
                                 yticks_interval=2, 
-                                figsize=(14, 8)):
+                                figsize=(14, 8),
+                                ax=None):
         """
         Plots the mean and SEM/Std of the peri-event time histogram (PETH) for a single bout with larger font sizes.
         
@@ -924,6 +969,7 @@ class GroupTDTData:
         - display_post_time (float): Time after the event onset to display on the x-axis (in seconds).
         - yticks_interval (float): Interval between y-ticks on the plot.
         - figsize (tuple): Size of the figure in inches (width, height).
+        - ax (matplotlib.axes.Axes, optional): The axis to plot on. If None, a new figure and axis are created.
         
         Returns:
         - None. Displays the mean PETH plot for the specified bout with SEM/Std shaded area.
@@ -1004,31 +1050,34 @@ class GroupTDTData:
         error_trace = error_trace[display_start_idx:display_end_idx]
         display_time = time_axis[display_start_idx:display_end_idx]
         
-        # Create the plot
-        plt.figure(figsize=figsize)
-        plt.plot(display_time, mean_trace, color=color, label=f'Mean {signal_type.capitalize()}', linewidth=3.5)  # Increased linewidth
-        plt.fill_between(display_time, mean_trace - error_trace, mean_trace + error_trace, color=color, alpha=0.4, label=error_label)  # Increased alpha for better visibility
-        plt.axvline(0, color='black', linestyle='--', label='Event Onset', linewidth=3)  # Thicker event onset line
+        # Create the plot or use the provided ax
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+        else:
+            fig = None  # Only needed if you need to save or further manipulate the figure
+            
+        ax.plot(display_time, mean_trace, color=color, label=f'Mean {signal_type.capitalize()}', linewidth=3.5)  # Increased linewidth
+        ax.fill_between(display_time, mean_trace - error_trace, mean_trace + error_trace, color=color, alpha=0.4, label=error_label)  # Increased alpha for better visibility
+        ax.axvline(0, color='black', linestyle='--', label='Event Onset', linewidth=5)  # Thicker event onset line
         
         # Customize x-axis
-        plt.xticks([display_time[0], 0, display_time[-1]], 
-                [f'{display_time[0]:.1f}', '0', f'{display_time[-1]:.1f}'], 
-                fontsize=24)  # Increased fontsize for x-tick labels
-        plt.xlabel('Time from Onset (s)', fontsize=32)  # Increased fontsize for x-axis label
+        ax.set_xticks([display_time[0], 0, display_time[-1]])
+        ax.set_xticklabels([f'{display_time[0]:.1f}', '0', f'{display_time[-1]:.1f}'], fontsize=24)  # Increased fontsize for x-tick labels
+        ax.set_xlabel('Time from Onset (s)', fontsize=40)  # Increased fontsize for x-axis label
         
         # Customize y-axis
-        y_min, y_max = plt.ylim()
+        y_min, y_max = ax.get_ylim()
         y_ticks = np.arange(np.floor(y_min / yticks_interval) * yticks_interval, 
                             np.ceil(y_max / yticks_interval) * yticks_interval + yticks_interval, 
                             yticks_interval)
-        plt.yticks(y_ticks, [f'{y:.0f}' for y in y_ticks], fontsize=30)  # Increased fontsize for y-tick labels
-        plt.ylabel(f'{signal_type.capitalize()} ΔF/F', fontsize= 32)  # Increased fontsize for y-axis label
+        ax.set_yticks(y_ticks)
+        ax.set_yticklabels([f'{y:.0f}' for y in y_ticks], fontsize=40)  # Increased fontsize for y-tick labels
+        ax.set_ylabel(f'Baseline Z-scored ΔF/F', fontsize= 40)  # Increased fontsize for y-axis label
         
         # Set title
-        # plt.title(title, fontsize=32)  # Increased fontsize for title
+        # ax.set_title(title, fontsize=32)  # Increased fontsize for title
         
         # Remove top and right spines
-        ax = plt.gca()
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
         
@@ -1037,14 +1086,16 @@ class GroupTDTData:
         ax.spines['bottom'].set_linewidth(3)
         
         # Customize tick parameters
-        ax.tick_params(axis='both', which='major', labelsize=30, width=2)  # Increased tick label size and tick width
+        ax.tick_params(axis='both', which='major', labelsize=40, width=2)  # Increased tick label size and tick width
         
         # Add legend with increased fontsize
-        # plt.legend(fontsize=20)
-        plt.savefig('Defeat.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
-
-        plt.tight_layout()
-        plt.show()
+        ax.legend(fontsize=30)
+        
+        if fig is not None:
+            fig.tight_layout()
+            plt.show()
+        else:
+            return ax
 
 
 

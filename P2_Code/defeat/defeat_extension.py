@@ -231,3 +231,151 @@ def d_proc_plot_individual_behavior(self, behavior_name='all', plot_type='zscore
     
     # Show the plot
     plt.show()
+
+
+
+def plot_peth_individual_traces(self, 
+                            signal_type='zscore', 
+                            bout=None, 
+                            title='PETH for First Investigation', 
+                            color='#00B7D7', 
+                            display_pre_time=3, 
+                            display_post_time=3, 
+                            yticks_interval=2, 
+                            figsize=(14, 8),
+                            ax=None):
+    """
+    Plots individual traces of the peri-event time histogram (PETH) for a single bout with larger font sizes.
+
+    Parameters:
+    - signal_type (str): The type of signal to plot. Options are 'zscore' or 'dFF'.
+    - bout (str): The bout name to plot. If None, defaults to the first bout in the list ['short_term_1', 'short_term_2', 'novel_1', 'long_term_1'].
+    - title (str): Title for the entire figure.
+    - color (str): Color for the individual traces (default is cyan '#00B7D7'). Individual traces can have varying shades if desired.
+    - display_pre_time (float): Time before the event onset to display on the x-axis (in seconds).
+    - display_post_time (float): Time after the event onset to display on the x-axis (in seconds).
+    - yticks_interval (float): Interval between y-ticks on the plot.
+    - figsize (tuple): Size of the figure in inches (width, height).
+    - ax (matplotlib.axes.Axes, optional): The axis to plot on. If None, a new figure and axis are created.
+
+    Returns:
+    - None. Displays the individual PETH traces for the specified bout.
+    """
+    # Define default bouts if none provided
+    default_bouts = ['short_term_1', 'short_term_2', 'novel_1', 'long_term_1']
+    if bout is None:
+        if default_bouts:
+            bout = default_bouts[0]
+            print(f"No bout specified. Defaulting to '{bout}'.")
+        else:
+            raise ValueError("No bouts available to plot. Please provide a bout name.")
+    
+    # Validate that 'bout' is a single string
+    if not isinstance(bout, str):
+        raise ValueError("Parameter 'bout' must be a single bout name as a string.")
+    
+    # Check if the specified bout exists in the data
+    first_block = next(iter(self.peri_event_data_all_blocks), None)
+    if first_block is None:
+        print("No peri-event data available.")
+        return
+    
+    if bout not in self.peri_event_data_all_blocks[first_block]:
+        available_bouts = list(self.peri_event_data_all_blocks[first_block].keys())
+        print(f"Bout '{bout}' not found in peri-event data. Available bouts: {available_bouts}")
+        return
+    
+    all_traces = []  # To store all signal traces for the specified bout
+    time_axis = None  # To store the time axis
+    
+    # Collect peri-event data for the specified bout across all blocks
+    for block_name, peth_data_block in self.peri_event_data_all_blocks.items():
+        if bout in peth_data_block:
+            peri_event_data = peth_data_block[bout]
+            signal_data = peri_event_data.get(signal_type)
+            current_time_axis = peri_event_data.get('time_axis')
+            
+            if signal_data is None or current_time_axis is None:
+                print(f"Missing '{signal_type}' or 'time_axis' in bout '{bout}' for block '{block_name}'. Skipping.")
+                continue
+            
+            all_traces.append(signal_data)
+            if time_axis is None:
+                time_axis = current_time_axis
+            else:
+                # Ensure time axes are consistent across blocks
+                if not np.array_equal(time_axis, current_time_axis):
+                    print(f"Inconsistent time axes in bout '{bout}' across blocks. Skipping block '{block_name}'.")
+                    all_traces.pop()  # Remove the last added trace
+                    continue
+    
+    if not all_traces:
+        print(f"No valid traces found for bout '{bout}'.")
+        return
+    
+    all_traces = np.array(all_traces)
+    
+    # Determine the minimum trace length to ensure consistency
+    min_length = min(len(trace) for trace in all_traces)
+    all_traces = all_traces[:, :min_length]
+    time_axis = time_axis[:min_length]
+    
+    # Define the display window
+    display_start_idx = np.searchsorted(time_axis, -display_pre_time)
+    display_end_idx = np.searchsorted(time_axis, display_post_time)
+    
+    # Truncate data to the display window
+    display_time = time_axis[display_start_idx:display_end_idx]
+    truncated_traces = all_traces[:, display_start_idx:display_end_idx]
+    
+    # Create the plot or use the provided ax
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = None  # Only needed if you need to save or further manipulate the figure
+    
+    # Plot each individual trace
+    for trace in truncated_traces:
+        ax.plot(display_time, trace, color=color, alpha=0.3)  # Reduced alpha for better visibility
+
+    # Add a vertical line at event onset
+    ax.axvline(0, color='black', linestyle='--', label='Event Onset', linewidth=3)  # Thicker event onset line
+
+    # Customize x-axis
+    ax.set_xticks([display_time[0], 0, display_time[-1]])
+    ax.set_xticklabels([f'{display_time[0]:.1f}', '0', f'{display_time[-1]:.1f}'], fontsize=24)  # Increased fontsize for x-tick labels
+    ax.set_xlabel('Time from Onset (s)', fontsize=32)  # Increased fontsize for x-axis label
+
+    # Customize y-axis
+    y_min, y_max = ax.get_ylim()
+    y_ticks = np.arange(np.floor(y_min / yticks_interval) * yticks_interval, 
+                        np.ceil(y_max / yticks_interval) * yticks_interval + yticks_interval, 
+                        yticks_interval)
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels([f'{y:.0f}' for y in y_ticks], fontsize=30)  # Increased fontsize for y-tick labels
+    ax.set_ylabel(f'{signal_type.capitalize()} ΔF/F', fontsize= 32)  # Increased fontsize for y-axis label
+
+    # Set title
+    ax.set_title(title, fontsize=32)  # Increased fontsize for title
+
+    # Remove top and right spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    
+    # Customize spines' linewidth
+    ax.spines['left'].set_linewidth(3)
+    ax.spines['bottom'].set_linewidth(3)
+    
+    # Customize tick parameters
+    ax.tick_params(axis='both', which='major', labelsize=30, width=2)  # Increased tick label size and tick width
+
+    # Add legend for event onset if not already present
+    handles, labels = ax.get_legend_handles_labels()
+    if 'Event Onset' in labels:
+        ax.legend(fontsize=20)
+
+    if fig is not None:
+        fig.tight_layout()
+        plt.show()
+    else:
+        return ax

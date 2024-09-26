@@ -7,7 +7,6 @@ from scipy.stats import linregress
 from scipy.optimize import curve_fit
 
 
-
 # These functions are used for all experiments
 custom_palette = ['#FF9F1C', '#0077B6', '#D1E8E2', '#55A630', '#E07A5F', '#FFADAD', '#2C2C54', '#792910']
 
@@ -218,6 +217,7 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
 
     plt.savefig(f'{title}{ylabel[0]}.png', transparent=True, bbox_inches='tight', pad_inches=pad_inches)
     # Display the plot without legend
+
     plt.tight_layout()
     plt.show()
 
@@ -934,10 +934,7 @@ def extract_nth_to_mth_behavior_mean_da(group_data, bouts, behavior='Investigati
 
     return behavior_mean_df
 
-
-
-
-def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, metric_type='slope', colors=None, custom_xtick_labels=None, custom_legend_labels=None, ylim=None):
+def plot_meanDA_across_investigations_single(mean_da_df, bouts, max_investigations=5, metric_type='slope', colors=None, custom_xtick_labels=None, custom_legend_labels=None, ylim=None):
     """
     Plots the mean DA from the 1st to 5th investigations across bouts and calculates either the slope or decay constant.
     
@@ -981,14 +978,105 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
             legend_label = custom_legend_labels[i] if custom_legend_labels is not None else bout
 
             # Plot the line for the bout with slope in the label and custom colors
-            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', color=colors[i % len(colors)], 
+            ax.plot(x_values, mean_across_investigations, marker='o', edgecolor='black', linestyle='-', color=colors, 
                     label=f'{legend_label} (slope: {slope:.2f})', linewidth=4, markersize=20)
 
         else:
             raise ValueError("Invalid metric_type. Use 'slope'.")
 
     # Add labels, title, and legend
-    ax.set_xlabel('Investigation Bout Number', fontsize=44, labelpad=12)
+    ax.set_xlabel('Defeat Bout Number', fontsize=44, labelpad=12)
+    ax.set_ylabel('Mean Z-scored ΔF/F', fontsize=44, labelpad=12)
+
+    # Set y-limits if provided
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
+    # Set custom x-tick labels if provided, otherwise default to investigation numbers
+    if custom_xtick_labels is not None:
+        ax.set_xticks(np.arange(1, len(custom_xtick_labels) + 1))
+        ax.set_xticklabels(custom_xtick_labels, fontsize=16)
+    else:
+        ax.set_xticks(np.arange(1, len(x_values) + 1))
+        ax.set_xticklabels(x_values, fontsize=16)
+
+    # Customize tick label sizes
+    ax.tick_params(axis='both', which='major', labelsize=48)
+
+    # Remove the top and right spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_linewidth(5)    # Left axis line
+    ax.spines['bottom'].set_linewidth(5)
+
+    # Add a legend
+    ax.legend(fontsize=30)
+
+    # Save the plot
+    plt.savefig('slope.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+
+    # Display the plot
+    plt.tight_layout()
+    plt.show()
+
+    # Print the slopes
+    for bout, metric in metrics.items():
+        print(f'Slope for {bout}: {metric:.2f}')
+
+
+
+def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, metric_type='slope', colors=None, custom_xtick_labels=None, custom_legend_labels=None, ylim=None):
+    """
+    Plots the mean DA from the 1st to 5th investigations across bouts and calculates either the slope or decay constant.
+    
+    Parameters:
+    mean_da_df (pd.DataFrame): A DataFrame where each row represents a subject, and each column represents a list of mean DA
+                               values during the investigations for a specific bout.
+    bouts (list): A list of bout names to plot.
+    max_investigations (int): Maximum number of investigations to consider (default is 5).
+    metric_type (str): Whether to compute 'slope' (default).
+    colors (list): A list of colors to use for different bouts.
+    custom_xtick_labels (list): Custom labels for the x-ticks, if provided. Otherwise, defaults to investigation numbers.
+    custom_legend_labels (list): Custom labels for the legend, if provided. Otherwise, defaults to bout names.
+    ylim (tuple): A tuple specifying the y-axis limits (min, max).
+    
+    Returns:
+    None. Displays the line plot and prints the slope for each bout.
+    """
+    # Create a plot for each bout
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Dictionary to store slopes for each bout
+    metrics = {}
+
+    for i, bout in enumerate(bouts):
+        # Extract data for the bout and truncate to the first 'max_investigations' investigations
+        bout_data = mean_da_df[bout].apply(lambda x: x[:max_investigations] + [np.nan] * (max_investigations - len(x)) if len(x) < max_investigations else x[:max_investigations])
+        bout_data = np.array(bout_data.tolist())  # Extract the list of mean DA values for each subject
+
+        # Average across subjects for each investigation (column-wise mean)
+        mean_across_investigations = np.nanmean(bout_data, axis=0)
+
+        # Define time points (investigation numbers)
+        x_values = np.arange(1, len(mean_across_investigations) + 1)  # [1, 2, ..., max_investigations]
+
+        if metric_type == 'slope':
+            # Calculate slope using linear regression (linregress)
+            slope, intercept, r_value, p_value, std_err = linregress(x_values, mean_across_investigations)
+            metrics[bout] = slope
+
+            # Use custom legend labels if provided, otherwise default to bout names
+            legend_label = custom_legend_labels[i] if custom_legend_labels is not None else bout
+
+            # Plot the line for the bout with slope in the label and custom colors
+            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', color=colors,#colors[i % len(colors)], 
+                    label=f'{legend_label} (slope: {slope:.3f})', linewidth=5, markersize=30)
+
+        else:
+            raise ValueError("Invalid metric_type. Use 'slope'.")
+
+    # Add labels, title, and legend
+    ax.set_xlabel('Defeat Bout Number', fontsize=44, labelpad=12)
     ax.set_ylabel('Mean Z-scored ΔF/F', fontsize=44, labelpad=12)
 
     # Set y-limits if provided
