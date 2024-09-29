@@ -42,7 +42,7 @@ def plot_y_across_bouts(df, title='Mean Across Bouts', ylabel='Mean Value', colo
         capsize=6,  # Increase capsize for larger error bars
         color=bar_color,  # Custom bar colors
         edgecolor='black', 
-        linewidth=2,  # Thicker and darker bar outlines
+        linewidth=4,  # Thicker and darker bar outlines
         width=0.6,
         error_kw=dict(elinewidth=2.5, capthick=2.5, zorder=5)  # Thicker error bars and make them appear above circles
     )
@@ -145,8 +145,8 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
         color=bar_color,  # Customizable bar color
         edgecolor='black', 
         linewidth=5,  # Thicker and darker bar outlines
-        width=0.7,
-        error_kw=dict(elinewidth=4, capthick=4,capsize=10,zorder=5)  # Thicker error bars and make them appear above circles
+        width=0.6,
+        error_kw=dict(elinewidth=3, capthick=3,zorder=5)  # Thicker error bars and make them appear above circles
         # elinewidth = 2.5, capthick = 2.5
     )
 
@@ -224,7 +224,7 @@ def plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='Mean Value'
 
 
 def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, custom_xtick_colors=None, ylim=None, 
-                               bar_color='#00B7D7', yticks_increment=None, xlabel='Agent', figsize=(12, 7), pad_inches=0.1, legend=True):
+                               bar_color='#00B7D7', yticks_increment=None, xlabel='intruder', figsize=(12, 7), pad_inches=0.1, legend=True):
     """
     Plots the mean values during investigations or other events across bouts with error bars for SEM
     and individual subject lines connecting the bouts.
@@ -261,7 +261,7 @@ def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value
         edgecolor='black', 
         linewidth=5,  # Thicker and darker bar outlines
         width=0.7,
-        
+        hatch = '/',
         error_kw=dict(elinewidth=4, capthick=4, capsize=10, zorder=5)  # Thicker error bars and make them appear above circles
     )
 
@@ -282,8 +282,8 @@ def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value
         ax.scatter(df.columns, df.loc[subject], color=marker_color, s=200, alpha=1, linewidth=4, zorder=2)  # Increased dot size to 200
 
     # Add labels, title, and format
-    ax.set_ylabel(ylabel, fontsize=44, labelpad=12)
-    ax.set_xlabel(xlabel, fontsize=44, labelpad=12)
+    ax.set_ylabel(ylabel, fontsize=50, labelpad=12)
+    ax.set_xlabel(xlabel, fontsize=50, labelpad=12)
     ax.set_title(title, fontsize=16)
 
     # Set x-ticks to match the bout labels
@@ -685,85 +685,6 @@ def extract_nth_behavior_mean_baseline_peth(group_data, bouts, behavior='Investi
     return behavior_mean_df
 
 
-
-
-
-def plot_approach_vs_aggression(group_data, min_duration=0):
-    """
-    Separates 'Approach' behaviors that are immediately followed by 'Aggression' (<1s) 
-    from those that are not, and plots the mean DA (z-scored ΔF/F) as bar graphs.
-    
-    Parameters:
-    group_data (object): The object containing bout data for each subject.
-    min_duration (float): The minimum duration of 'Approach' behaviors to include in the plot.
-    """
-    approach_followed_by_aggression = []
-    approach_not_followed_by_aggression = []
-    subject_names_aggression = []
-    subject_names_no_aggression = []
-
-    # Loop through each block in group_data.blocks
-    for block_name, block_data in group_data.blocks.items():
-        if block_data.bout_dict:  # Ensure bout_dict is populated
-            for bout, behavior_data in block_data.bout_dict.items():
-                if 'Approach' in behavior_data:
-                    # Loop through all 'Approach' events in this bout
-                    for i, approach_event in enumerate(behavior_data['Approach']):
-                        duration = approach_event['Total Duration']
-                        if duration < min_duration:  # Only include events longer than min_duration
-                            continue
-
-                        approach_offset = approach_event['End Time']
-
-                        # Check if there is an 'Aggression' behavior immediately after the 'Approach'
-                        followed_by_aggression = False
-                        if 'Aggression' in behavior_data:
-                            for aggression_event in behavior_data['Aggression']:
-                                if aggression_event['Start Time'] - approach_offset < 1:  # Check if it's within 1 second
-                                    followed_by_aggression = True
-                                    break
-
-                        # Separate into the appropriate list
-                        if followed_by_aggression:
-                            approach_followed_by_aggression.append(approach_event['Mean zscore'])
-                            subject_names_aggression.append(block_name)
-                        else:
-                            approach_not_followed_by_aggression.append(approach_event['Mean zscore'])
-                            subject_names_no_aggression.append(block_name)
-
-    # Ensure lists are only flat arrays of valid numbers
-    approach_followed_by_aggression = [x for x in approach_followed_by_aggression if isinstance(x, (float, int))]
-    approach_not_followed_by_aggression = [x for x in approach_not_followed_by_aggression if isinstance(x, (float, int))]
-
-    # Convert lists to numpy arrays for calculations
-    approach_followed_by_aggression = np.array(approach_followed_by_aggression, dtype=np.float64)
-    approach_not_followed_by_aggression = np.array(approach_not_followed_by_aggression, dtype=np.float64)
-
-    # Calculate the mean and SEM for both categories
-    mean_with_aggression = np.nanmean(approach_followed_by_aggression) if len(approach_followed_by_aggression) > 0 else np.nan
-    sem_with_aggression = np.nanstd(approach_followed_by_aggression) / np.sqrt(len(approach_followed_by_aggression)) if len(approach_followed_by_aggression) > 0 else np.nan
-
-    mean_without_aggression = np.nanmean(approach_not_followed_by_aggression) if len(approach_not_followed_by_aggression) > 0 else np.nan
-    sem_without_aggression = np.nanstd(approach_not_followed_by_aggression) / np.sqrt(len(approach_not_followed_by_aggression)) if len(approach_not_followed_by_aggression) > 0 else np.nan
-
-    # Bar plot
-    categories = ['Approach w/ Aggression', 'Approach w/o Aggression']
-    means = np.array([mean_with_aggression, mean_without_aggression])
-    sems = [sem_with_aggression, sem_without_aggression]
-
-    plt.figure(figsize=(8, 6))
-    
-    # Create bar graph with error bars (mean ± SEM)
-    plt.bar(categories, means, yerr=sems, capsize=5, color=['lightcoral', 'skyblue'], edgecolor='black')
-
-    # Add labels and title
-    plt.ylabel('Mean Z-scored ΔF/F')
-    plt.title('Mean DA for Approach Behaviors With and Without Aggression')
-
-    plt.tight_layout()
-    plt.show()
-
-
 import logging
 
 def extract_nth_to_mth_behavior_mean_da_baseline(self, bouts, behavior='Investigation', 
@@ -985,7 +906,7 @@ def plot_meanDA_across_investigations_single(mean_da_df, bouts, max_investigatio
             raise ValueError("Invalid metric_type. Use 'slope'.")
 
     # Add labels, title, and legend
-    ax.set_xlabel('Defeat Bout Number', fontsize=44, labelpad=12)
+    ax.set_xlabel('Investigation Bout Number', fontsize=44, labelpad=12)
     ax.set_ylabel('Mean Z-scored ΔF/F', fontsize=44, labelpad=12)
 
     # Set y-limits if provided
@@ -1069,14 +990,14 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
             legend_label = custom_legend_labels[i] if custom_legend_labels is not None else bout
 
             # Plot the line for the bout with slope in the label and custom colors
-            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', color=colors,#colors[i % len(colors)], 
+            ax.plot(x_values, mean_across_investigations, marker='o', linestyle='-', color=colors[i % len(colors)], #colors,#
                     label=f'{legend_label} (slope: {slope:.3f})', linewidth=5, markersize=30)
 
         else:
             raise ValueError("Invalid metric_type. Use 'slope'.")
 
     # Add labels, title, and legend
-    ax.set_xlabel('Defeat Bout Number', fontsize=44, labelpad=12)
+    ax.set_xlabel('Investigation Bout Number', fontsize=44, labelpad=12)
     ax.set_ylabel('Mean Z-scored ΔF/F', fontsize=44, labelpad=12)
 
     # Set y-limits if provided
@@ -1101,7 +1022,7 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
     ax.spines['bottom'].set_linewidth(5)
 
     # Add a legend
-    ax.legend(fontsize=30)
+    ax.legend(fontsize=26)
 
     # Save the plot
     plt.savefig('slope.png', transparent=True, bbox_inches='tight', pad_inches=0.1)

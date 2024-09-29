@@ -109,9 +109,9 @@ class GroupTDTData:
             # print(baseline_end) 
             # tdt_data_obj.compute_zscore(method = 'baseline', baseline_start = baseline_start, baseline_end = baseline_end)
             tdt_data_obj.compute_zscore(method = 'standard')
-            # tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
-            # tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
-            tdt_data_obj.ag_extract_aggression_events(csv_file_path)
+            tdt_data_obj.extract_manual_annotation_behaviors(csv_file_path)
+            tdt_data_obj.remove_short_behaviors(behavior_name='all', min_duration=0.2)
+            # tdt_data_obj.ag_extract_aggression_events(csv_file_path)
             tdt_data_obj.combine_consecutive_behaviors(behavior_name='all', bout_time_threshold=2, min_occurrences=1)
 
 
@@ -570,7 +570,7 @@ class GroupTDTData:
         plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--', linewidth=4)
 
         # Add labels and title with larger font sizes
-        plt.xlabel(f'Mean Z-scored ΔF/F', fontsize=44, labelpad=20)
+        plt.xlabel(f'Baseline Z-scored ΔF/F', fontsize=44, labelpad=20)
         plt.ylabel(f'Bout Duration (s)', fontsize=44, labelpad=20)
 
         # Apply y-axis limits if provided
@@ -581,15 +581,22 @@ class GroupTDTData:
         plt.xticks(fontsize=40)
         plt.yticks(fontsize=40)
 
-        # Display Pearson correlation and p-value in the legend
-        correlation_text = f'r = {r:.3f}\np = {p:.2e}\nn = {len(mean_zscored_dffs)} events'
-        legend_entries = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=30, markeredgewidth=2, markeredgecolor='black') for bout in bouts]
-        legend_labels = [legend_names.get(bout, bout) for bout in bouts]
-        legend_entries.append(plt.Line2D([0], [0], linestyle='--', color='black', linewidth=4))
-        legend_labels.append(correlation_text)
+        # Display Pearson correlation and p-value in the legend with the p-value in 3 decimal places
+        correlation_text = f'r = {r:.3f}\np = {p:.3f}\nn = {len(mean_zscored_dffs)} events'
 
-        # Add a legend with bout names and correlation inside the plot at the specified location
-        plt.legend(legend_entries, legend_labels, title='Bout', loc=legend_loc, fontsize=24, title_fontsize=28)
+        # Create custom legend markers
+        custom_lines = [
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=20, markeredgecolor='black') 
+            for bout in bouts
+        ]
+        # Add an empty Line2D object for the correlation text
+        custom_lines.append(plt.Line2D([0], [0], color='none'))
+
+        # Combine the bout labels and the correlation text
+        legend_labels = [legend_names.get(bout, bout) for bout in bouts] + [correlation_text]
+
+        # Add a legend with bout names and correlation, placing it to the right of the plot
+        plt.legend(custom_lines, legend_labels, title='Agent', loc=legend_loc, fontsize=26, title_fontsize=28)
 
         # Remove top and right spines and increase the linewidth of the remaining spines
         sns.despine()
@@ -600,10 +607,6 @@ class GroupTDTData:
 
         plt.tight_layout()
         plt.show()
-
-
-
-
 
 
 
@@ -974,6 +977,7 @@ class GroupTDTData:
         Returns:
         - None. Displays the mean PETH plot for the specified bout with SEM/Std shaded area.
         """
+        
         # Define default bouts if none provided
         default_bouts = ['Short_Term_1', 'Short_Term_2', 'Novel_1', 'Long_Term_1']
         if bout is None:
@@ -987,15 +991,9 @@ class GroupTDTData:
         if not isinstance(bout, str):
             raise ValueError("Parameter 'bout' must be a single bout name as a string.")
         
-        # Check if the specified bout exists in the data
-        first_block = next(iter(self.peri_event_data_all_blocks))
-        if bout not in self.peri_event_data_all_blocks[first_block]:
-            available_bouts = list(self.peri_event_data_all_blocks[first_block].keys())
-            print(f"Bout '{bout}' not found in peri-event data. Available bouts: {available_bouts}")
-            return
-        
-        all_traces = []  # To store all signal traces for the specified bout
-        time_axis = None  # To store the time axis
+        # Initialize lists to store traces and time axes
+        all_traces = []       # To store all signal traces for the specified bout
+        all_time_axes = []    # To store all time axes
         
         # Collect peri-event data for the specified bout across all blocks
         for block_name, peth_data_block in self.peri_event_data_all_blocks.items():
@@ -1009,25 +1007,51 @@ class GroupTDTData:
                     continue
                 
                 all_traces.append(signal_data)
-                if time_axis is None:
-                    time_axis = current_time_axis
-                else:
-                    # Ensure time axes are consistent across blocks
-                    if not np.array_equal(time_axis, current_time_axis):
-                        print(f"Inconsistent time axes in bout '{bout}' across blocks. Skipping block '{block_name}'.")
-                        all_traces.pop()  # Remove the last added trace
-                        continue
+                all_time_axes.append(current_time_axis)
+                print(f"Collected trace from block '{block_name}' with {len(signal_data)} data points.")
         
         if not all_traces:
             print(f"No valid traces found for bout '{bout}'.")
             return
         
-        all_traces = np.array(all_traces)
+        # Determine the overlapping time range across all blocks
+        # Find the maximum start time and minimum end time
+        start_times = [ta[0] for ta in all_time_axes]
+        end_times = [ta[-1] for ta in all_time_axes]
+        common_start = max(start_times)
+        common_end = min(end_times)
         
-        # Determine the minimum trace length to ensure consistency
-        min_length = min(len(trace) for trace in all_traces)
-        all_traces = all_traces[:, :min_length]
-        time_axis = time_axis[:min_length]
+        print(f"Common overlapping time range: {common_start} to {common_end} seconds.")
+        
+        if common_end <= common_start:
+            print("No overlapping time range found across blocks.")
+            return
+        
+        # Define a common time axis based on the smallest overlapping range
+        # Assuming all time axes are uniformly sampled
+        # To handle slight differences, we'll define a new common time axis
+        # based on the first block's time axis
+        reference_time_axis = all_time_axes[0]
+        # Find indices within the common range for the reference
+        ref_start_idx = np.searchsorted(reference_time_axis, common_start, side='left')
+        ref_end_idx = np.searchsorted(reference_time_axis, common_end, side='right')
+        common_time_axis = reference_time_axis[ref_start_idx:ref_end_idx]
+        print(f"Reference time axis truncated to indices {ref_start_idx} to {ref_end_idx} ({len(common_time_axis)} points).")
+        
+        # Initialize list for interpolated traces
+        interpolated_traces = []
+        
+        for idx, (trace, ta) in enumerate(zip(all_traces, all_time_axes)):
+            # Define the interpolation function
+            interp_func = interp1d(ta, trace, kind='linear', bounds_error=False, fill_value='extrapolate')
+            # Interpolate the trace onto the common_time_axis
+            interpolated_trace = interp_func(common_time_axis)
+            interpolated_traces.append(interpolated_trace)
+            print(f"Interpolated trace {idx+1} to common time axis with {len(interpolated_trace)} points.")
+        
+        # Convert interpolated_traces to a NumPy array
+        all_traces = np.array(interpolated_traces)
+        print(f"All traces stacked into array with shape {all_traces.shape}.")
         
         # Calculate mean and error metrics
         mean_trace = np.mean(all_traces, axis=0)
@@ -1042,28 +1066,37 @@ class GroupTDTData:
             raise ValueError("Invalid 'error_type'. Choose either 'sem' or 'std'.")
         
         # Define the display window
-        display_start_idx = np.searchsorted(time_axis, -display_pre_time)
-        display_end_idx = np.searchsorted(time_axis, display_post_time)
+        display_start = -display_pre_time
+        display_end = display_post_time
+        display_start_idx = np.searchsorted(common_time_axis, display_start, side='left')
+        display_end_idx = np.searchsorted(common_time_axis, display_end, side='right')
+        
+        # Handle cases where display window exceeds common_time_axis
+        display_start_idx = max(display_start_idx, 0)
+        display_end_idx = min(display_end_idx, len(common_time_axis))
         
         # Truncate data to the display window
         mean_trace = mean_trace[display_start_idx:display_end_idx]
         error_trace = error_trace[display_start_idx:display_end_idx]
-        display_time = time_axis[display_start_idx:display_end_idx]
+        display_time = common_time_axis[display_start_idx:display_end_idx]
+        
+        print(f"Display window: {display_start} to {display_end} seconds.")
+        print(f"Displaying {len(display_time)} data points.")
         
         # Create the plot or use the provided ax
         if ax is None:
             fig, ax = plt.subplots(figsize=figsize)
         else:
             fig = None  # Only needed if you need to save or further manipulate the figure
-            
-        ax.plot(display_time, mean_trace, color=color, label=f'Mean {signal_type.capitalize()}', linewidth=3.5)  # Increased linewidth
-        ax.fill_between(display_time, mean_trace - error_trace, mean_trace + error_trace, color=color, alpha=0.4, label=error_label)  # Increased alpha for better visibility
-        ax.axvline(0, color='black', linestyle='--', label='Event Onset', linewidth=5)  # Thicker event onset line
+        
+        ax.plot(display_time, mean_trace, color=color, label=f'Mean {signal_type.capitalize()}', linewidth=3.5)
+        ax.fill_between(display_time, mean_trace - error_trace, mean_trace + error_trace, color=color, alpha=0.4, label=error_label)
+        ax.axvline(0, color='black', linestyle='--', label='Event Onset', linewidth=5)
         
         # Customize x-axis
         ax.set_xticks([display_time[0], 0, display_time[-1]])
-        ax.set_xticklabels([f'{display_time[0]:.1f}', '0', f'{display_time[-1]:.1f}'], fontsize=24)  # Increased fontsize for x-tick labels
-        ax.set_xlabel('Time from Onset (s)', fontsize=40)  # Increased fontsize for x-axis label
+        ax.set_xticklabels([f'{display_time[0]:.1f}', '0', f'{display_time[-1]:.1f}'], fontsize=24)
+        ax.set_xlabel('Time from Onset (s)', fontsize=40)
         
         # Customize y-axis
         y_min, y_max = ax.get_ylim()
@@ -1071,11 +1104,8 @@ class GroupTDTData:
                             np.ceil(y_max / yticks_interval) * yticks_interval + yticks_interval, 
                             yticks_interval)
         ax.set_yticks(y_ticks)
-        ax.set_yticklabels([f'{y:.0f}' for y in y_ticks], fontsize=40)  # Increased fontsize for y-tick labels
-        ax.set_ylabel(f'Baseline Z-scored ΔF/F', fontsize= 40)  # Increased fontsize for y-axis label
-        
-        # Set title
-        # ax.set_title(title, fontsize=32)  # Increased fontsize for title
+        ax.set_yticklabels([f'{y:.0f}' for y in y_ticks], fontsize=40)
+        ax.set_ylabel(f'Standard Z-scored ΔF/F', fontsize=40)
         
         # Remove top and right spines
         ax.spines['right'].set_visible(False)
@@ -1086,10 +1116,13 @@ class GroupTDTData:
         ax.spines['bottom'].set_linewidth(3)
         
         # Customize tick parameters
-        ax.tick_params(axis='both', which='major', labelsize=40, width=2)  # Increased tick label size and tick width
-        
+        ax.tick_params(axis='both', which='major', labelsize=40, width=2)
+
+        plt.savefig('standard.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+
         # Add legend with increased fontsize
         ax.legend(fontsize=30)
+        
         
         if fig is not None:
             fig.tight_layout()

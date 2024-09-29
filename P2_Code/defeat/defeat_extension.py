@@ -234,16 +234,20 @@ def d_proc_plot_individual_behavior(self, behavior_name='all', plot_type='zscore
 
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
+
 def plot_peth_individual_traces(self, 
-                            signal_type='zscore', 
-                            bout=None, 
-                            title='PETH for First Investigation', 
-                            color='#00B7D7', 
-                            display_pre_time=3, 
-                            display_post_time=3, 
-                            yticks_interval=2, 
-                            figsize=(14, 8),
-                            ax=None):
+                                signal_type='zscore', 
+                                bout=None, 
+                                title='PETH for First Investigation', 
+                                color='#00B7D7', 
+                                display_pre_time=3, 
+                                display_post_time=3, 
+                                yticks_interval=2, 
+                                figsize=(14, 8),
+                                ax=None):
     """
     Plots individual traces of the peri-event time histogram (PETH) for a single bout with larger font sizes.
 
@@ -274,19 +278,9 @@ def plot_peth_individual_traces(self,
     if not isinstance(bout, str):
         raise ValueError("Parameter 'bout' must be a single bout name as a string.")
     
-    # Check if the specified bout exists in the data
-    first_block = next(iter(self.peri_event_data_all_blocks), None)
-    if first_block is None:
-        print("No peri-event data available.")
-        return
-    
-    if bout not in self.peri_event_data_all_blocks[first_block]:
-        available_bouts = list(self.peri_event_data_all_blocks[first_block].keys())
-        print(f"Bout '{bout}' not found in peri-event data. Available bouts: {available_bouts}")
-        return
-    
-    all_traces = []  # To store all signal traces for the specified bout
-    time_axis = None  # To store the time axis
+    # Initialize lists to store traces and time axes
+    all_traces = []       # To store all signal traces for the specified bout
+    all_time_axes = []    # To store all time axes
     
     # Collect peri-event data for the specified bout across all blocks
     for block_name, peth_data_block in self.peri_event_data_all_blocks.items():
@@ -300,33 +294,66 @@ def plot_peth_individual_traces(self,
                 continue
             
             all_traces.append(signal_data)
-            if time_axis is None:
-                time_axis = current_time_axis
-            else:
-                # Ensure time axes are consistent across blocks
-                if not np.array_equal(time_axis, current_time_axis):
-                    print(f"Inconsistent time axes in bout '{bout}' across blocks. Skipping block '{block_name}'.")
-                    all_traces.pop()  # Remove the last added trace
-                    continue
+            all_time_axes.append(current_time_axis)
+            print(f"Collected trace from block '{block_name}' with {len(signal_data)} data points.")
     
     if not all_traces:
         print(f"No valid traces found for bout '{bout}'.")
         return
     
-    all_traces = np.array(all_traces)
+    # Determine the overlapping time range across all blocks
+    # Find the maximum start time and minimum end time
+    start_times = [ta[0] for ta in all_time_axes]
+    end_times = [ta[-1] for ta in all_time_axes]
+    common_start = max(start_times)
+    common_end = min(end_times)
     
-    # Determine the minimum trace length to ensure consistency
-    min_length = min(len(trace) for trace in all_traces)
-    all_traces = all_traces[:, :min_length]
-    time_axis = time_axis[:min_length]
+    print(f"Common overlapping time range: {common_start} to {common_end} seconds.")
+    
+    if common_end <= common_start:
+        print("No overlapping time range found across blocks.")
+        return
+    
+    # Define a common time axis based on the overlapping time range
+    # Assuming all time axes are uniformly sampled, we use the first block as reference
+    reference_time_axis = all_time_axes[0]
+    # Find indices within the common range for the reference
+    ref_start_idx = np.searchsorted(reference_time_axis, common_start, side='left')
+    ref_end_idx = np.searchsorted(reference_time_axis, common_end, side='right')
+    common_time_axis = reference_time_axis[ref_start_idx:ref_end_idx]
+    print(f"Reference time axis truncated to indices {ref_start_idx} to {ref_end_idx} ({len(common_time_axis)} points).")
+    
+    # Initialize list for interpolated traces
+    interpolated_traces = []
+    
+    for idx, (trace, ta) in enumerate(zip(all_traces, all_time_axes)):
+        # Define the interpolation function
+        interp_func = interp1d(ta, trace, kind='linear', bounds_error=False, fill_value='extrapolate')
+        # Interpolate the trace onto the common_time_axis
+        interpolated_trace = interp_func(common_time_axis)
+        interpolated_traces.append(interpolated_trace)
+        print(f"Interpolated trace {idx+1} to common time axis with {len(interpolated_trace)} points.")
+    
+    # Convert interpolated_traces to a NumPy array
+    all_traces = np.array(interpolated_traces)
+    print(f"All traces stacked into array with shape {all_traces.shape}.")
     
     # Define the display window
-    display_start_idx = np.searchsorted(time_axis, -display_pre_time)
-    display_end_idx = np.searchsorted(time_axis, display_post_time)
+    display_start = -display_pre_time
+    display_end = display_post_time
+    display_start_idx = np.searchsorted(common_time_axis, display_start, side='left')
+    display_end_idx = np.searchsorted(common_time_axis, display_end, side='right')
+    
+    # Handle cases where display window exceeds common_time_axis
+    display_start_idx = max(display_start_idx, 0)
+    display_end_idx = min(display_end_idx, len(common_time_axis))
     
     # Truncate data to the display window
-    display_time = time_axis[display_start_idx:display_end_idx]
+    display_time = common_time_axis[display_start_idx:display_end_idx]
     truncated_traces = all_traces[:, display_start_idx:display_end_idx]
+    
+    print(f"Display window: {display_start} to {display_end} seconds.")
+    print(f"Displaying {len(display_time)} data points.")
     
     # Create the plot or use the provided ax
     if ax is None:
@@ -336,16 +363,16 @@ def plot_peth_individual_traces(self,
     
     # Plot each individual trace
     for trace in truncated_traces:
-        ax.plot(display_time, trace, color=color, alpha=0.3)  # Reduced alpha for better visibility
-
+        ax.plot(display_time, trace, color=color, alpha=1)  # Reduced alpha for better visibility
+    
     # Add a vertical line at event onset
     ax.axvline(0, color='black', linestyle='--', label='Event Onset', linewidth=3)  # Thicker event onset line
-
+    
     # Customize x-axis
     ax.set_xticks([display_time[0], 0, display_time[-1]])
     ax.set_xticklabels([f'{display_time[0]:.1f}', '0', f'{display_time[-1]:.1f}'], fontsize=24)  # Increased fontsize for x-tick labels
     ax.set_xlabel('Time from Onset (s)', fontsize=32)  # Increased fontsize for x-axis label
-
+    
     # Customize y-axis
     y_min, y_max = ax.get_ylim()
     y_ticks = np.arange(np.floor(y_min / yticks_interval) * yticks_interval, 
@@ -357,7 +384,7 @@ def plot_peth_individual_traces(self,
 
     # Set title
     ax.set_title(title, fontsize=32)  # Increased fontsize for title
-
+    
     # Remove top and right spines
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -368,11 +395,13 @@ def plot_peth_individual_traces(self,
     
     # Customize tick parameters
     ax.tick_params(axis='both', which='major', labelsize=30, width=2)  # Increased tick label size and tick width
-
+    
     # Add legend for event onset if not already present
     handles, labels = ax.get_legend_handles_labels()
     if 'Event Onset' in labels:
         ax.legend(fontsize=20)
+
+    plt.savefig('all.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
 
     if fig is not None:
         fig.tight_layout()

@@ -967,169 +967,167 @@ def sp_extract_nth_behavior_mean_da_corrected(group_data, behavior, n=1, max_dur
     return behavior_mean_df
 
 
+def sp_plot_first_investigation_vs_zscore_4s(self, bouts=None, behavior_name='investigation', legend_names=None, legend_loc='upper left'):
+    """
+    Plot the first occurrence of the specified behavior duration vs. mean Z-scored ΔF/F relative to the event onset 
+    within a fixed 4-second window for all blocks, color-coded by bout type, with custom legend names and enhanced plot formatting.
 
-def sp_plot_first_investigation_vs_zscore_4s(self, bouts=None, behavior_name='investigation', legend_names=None):
-        """
-        Plot the first occurrence of the specified behavior duration vs. mean Z-scored ΔF/F relative to the event onset 
-        within a fixed 4-second window for all blocks, color-coded by bout type, with custom legend names and enhanced plot formatting.
+    Parameters:
+    - behavior_name (str): The name of the behavior to analyze (default is 'investigation').
+    - bouts (list): A list of bout names to include in the analysis. If None, defaults to ['short_term', 'novel'].
+    - legend_names (dict): A dictionary to map bout names to custom legend labels. If None, defaults to standard labels.
+    - legend_loc (str): The location of the legend. Defaults to 'upper left'.
+    """
+    # Default bouts if none are provided
+    if bouts is None:
+        bouts = ['short_term', 'novel']
 
-        Parameters:
-        - behavior_name (str): The name of the behavior to analyze (default is 'investigation').
-        - bouts (list): A list of bout names to include in the analysis. If None, defaults to ['short_term', 'novel'].
-        - legend_names (dict): A dictionary to map bout names to custom legend labels. If None, defaults to standard labels.
-        """
-        # Default bouts if none are provided
-        if bouts is None:
-            bouts = ['short_term', 'novel']
-
-        # Default legend names if none are provided
-        if legend_names is None:
-            legend_names = {
-                'short_term': 'Short-Term',
-                'novel': 'Novel Object',
-                'long_term': 'Long-Term',
-                'nothing': 'Empty'
-            }
-
-        # Define the custom colors
-        bout_colors = {
-            'short_term': '#00B7D7',
-            'novel': '#E06928',
-            'long_term': '#0045A6',
-            'nothing': '#A839A4'
+    # Default legend names if none are provided
+    if legend_names is None:
+        legend_names = {
+            'short_term': 'Short-Term',
+            'novel': 'Novel',
+            'long_term': 'Long-Term',
+            'nothing': 'Empty'
         }
 
-        mean_zscored_dffs = []
-        behavior_durations = []
-        bout_names_collected = []
+    # Define the custom colors
+    bout_colors = {
+        'short_term': '#0045A6',
+        'novel': '#E06928',
+        'long_term': '#A839A4',
+        'nothing': '#A839A4'
+    }
 
-        # Iterate through each block
-        for block_name, block_data in self.blocks.items():
-            # Ensure zscore and timestamps are available
-            if block_data.zscore is None or block_data.timestamps is None:
-                print(f"Block {block_name} is missing zscore or timestamps data. Skipping.")
+    mean_zscored_dffs = []
+    behavior_durations = []
+    bout_names_collected = []
+
+    # Iterate through each block
+    for block_name, block_data in self.blocks.items():
+        # Ensure zscore and timestamps are available
+        if block_data.zscore is None or block_data.timestamps is None:
+            print(f"Block {block_name} is missing zscore or timestamps data. Skipping.")
+            continue
+
+        # Iterate through each specified bout
+        for bout in bouts:
+            # Check if the bout exists in the behavior_event_dict
+            if bout not in block_data.behavior_event_dict:
+                print(f"Bout '{bout}' not found in block '{block_name}'. Skipping.")
                 continue
 
-            # Iterate through each specified bout
-            for bout in bouts:
-                # Check if the bout exists in the behavior_event_dict
-                if bout not in block_data.behavior_event_dict:
-                    print(f"Bout '{bout}' not found in block '{block_name}'. Skipping.")
-                    continue
+            # Check if the specified behavior exists for the bout
+            if behavior_name not in block_data.behavior_event_dict[bout]:
+                print(f"Behavior '{behavior_name}' not found in bout '{bout}' for block '{block_name}'. Skipping.")
+                continue
 
-                # Check if the specified behavior exists for the bout
-                if behavior_name not in block_data.behavior_event_dict[bout]:
-                    print(f"Behavior '{behavior_name}' not found in bout '{bout}' for block '{block_name}'. Skipping.")
-                    continue
+            investigation_events = block_data.behavior_event_dict[bout][behavior_name]
 
-                investigation_events = block_data.behavior_event_dict[bout][behavior_name]
+            if len(investigation_events) == 0:
+                print(f"No '{behavior_name}' events found in bout '{bout}' for block '{block_name}'. Skipping.")
+                continue
 
-                if len(investigation_events) == 0:
-                    print(f"No '{behavior_name}' events found in bout '{bout}' for block '{block_name}'. Skipping.")
-                    continue
+            # Get the first occurrence of the behavior
+            first_event = investigation_events[0]
+            event_start = first_event['Start Time']
+            event_duration = first_event['Duration']
 
-                # Get the first occurrence of the behavior
-                first_event = investigation_events[0]
-                event_start = first_event['Start Time']
-                event_duration = first_event['Duration']
+            # Define the fixed 4-second window starting from the event onset
+            window_start = event_start
+            window_end = event_start + 4.0
 
-                # Define the fixed 4-second window starting from the event onset
-                window_start = event_start
-                window_end = event_start + 4.0
+            # Ensure the window does not exceed the available timestamps
+            if window_end > block_data.timestamps[-1]:
+                print(f"Window end time {window_end}s exceeds the available data in block '{block_name}'. Adjusting window.")
+                window_end = block_data.timestamps[-1]
 
-                # Ensure the window does not exceed the available timestamps
-                if window_end > block_data.timestamps[-1]:
-                    print(f"Window end time {window_end}s exceeds the available data in block '{block_name}'. Adjusting window.")
-                    window_end = block_data.timestamps[-1]
+            # Find indices within the window
+            window_mask = (block_data.timestamps >= window_start) & (block_data.timestamps <= window_end)
 
-                # Find indices within the window
-                window_mask = (block_data.timestamps >= window_start) & (block_data.timestamps <= window_end)
+            if not np.any(window_mask):
+                print(f"No data found in the window [{window_start}, {window_end}]s for block '{block_name}', bout '{bout}'. Skipping.")
+                continue
 
-                if not np.any(window_mask):
-                    print(f"No data found in the window [{window_start}, {window_end}]s for block '{block_name}', bout '{bout}'. Skipping.")
-                    continue
+            # Extract zscore data within the window
+            zscore_window = block_data.zscore[window_mask]
 
-                # Extract zscore data within the window
-                zscore_window = block_data.zscore[window_mask]
+            # Calculate the mean z-scored ΔF/F over the window
+            mean_zscore = np.mean(zscore_window)
 
-                # Calculate the mean z-scored ΔF/F over the window
-                mean_zscore = np.mean(zscore_window)
+            # Store the results
+            mean_zscored_dffs.append(mean_zscore)
+            behavior_durations.append(event_duration)
+            bout_names_collected.append(bout)
 
-                # Store the results
-                mean_zscored_dffs.append(mean_zscore)
-                behavior_durations.append(event_duration)
-                bout_names_collected.append(bout)
+    # Convert lists to numpy arrays
+    mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
+    behavior_durations = np.array(behavior_durations, dtype=np.float64)
+    bout_names_collected = np.array(bout_names_collected)
 
-        # Convert lists to numpy arrays
-        mean_zscored_dffs = np.array(mean_zscored_dffs, dtype=np.float64)
-        behavior_durations = np.array(behavior_durations, dtype=np.float64)
-        bout_names_collected = np.array(bout_names_collected)
+    # Check if there are valid data points
+    if len(mean_zscored_dffs) == 0 or len(behavior_durations) == 0:
+        print("No valid data points for correlation and plotting.")
+        return
 
-        # Check if there are valid data points
-        if len(mean_zscored_dffs) == 0 or len(behavior_durations) == 0:
-            print("No valid data points for correlation and plotting.")
-            return
+    # Calculate Pearson correlation
+    r, p = stats.pearsonr(mean_zscored_dffs, behavior_durations)
 
-        # Calculate Pearson correlation
-        r, p = stats.pearsonr(mean_zscored_dffs, behavior_durations)
-        r_squared = r ** 2  # Calculate r-squared
+    # Step 3: Plotting the scatter plot
+    plt.figure(figsize=(16, 9))
 
-        # Step 3: Plotting the scatter plot
-        plt.figure(figsize=(16, 9))
+    # Plot each bout separately
+    for bout in bouts:
+        # Create a mask for each bout
+        mask = bout_names_collected == bout
+        plt.scatter(
+            mean_zscored_dffs[mask], 
+            behavior_durations[mask],
+            color=bout_colors.get(bout, '#000000'),  # Default to black if bout color not found
+            label=legend_names.get(bout, bout), 
+            alpha=1, 
+            s=800, 
+            edgecolor='black', 
+            linewidth=6
+        )
 
-        # Plot each bout separately
-        for bout in bouts:
-            # Create a mask for each bout
-            mask = bout_names_collected == bout
-            plt.scatter(
-                mean_zscored_dffs[mask], 
-                behavior_durations[mask],
-                color=bout_colors.get(bout, '#000000'),  # Default to black if bout color not found
-                label=legend_names.get(bout, bout), 
-                alpha=1, 
-                s=600, 
-                edgecolor='black', 
-                linewidth=2
-            )
+    # Adding the regression line with a consistent dashed style
+    slope, intercept = np.polyfit(mean_zscored_dffs, behavior_durations, 1)
+    regression_x = np.linspace(mean_zscored_dffs.min(), mean_zscored_dffs.max(), 100)
+    regression_y = slope * regression_x + intercept
+    plt.plot(regression_x, regression_y, color='black', linestyle='--', linewidth=4)
 
-        # Adding the regression line with a consistent dashed style
-        slope, intercept = np.polyfit(mean_zscored_dffs, behavior_durations, 1)
-        regression_x = np.linspace(mean_zscored_dffs.min(), mean_zscored_dffs.max(), 100)
-        regression_y = slope * regression_x + intercept
-        plt.plot(regression_x, regression_y, color='black', linestyle='--', linewidth=4, label='Regression Line')
+    # Add labels and title with larger font sizes
+    plt.xlabel('Baseline Z-scored ΔF/F', fontsize=44, labelpad=20)
+    plt.ylabel(f'Bout Duration (s)', fontsize=44, labelpad=20)
 
-        # Add labels and title with larger font sizes
-        plt.xlabel('Mean Z-scored ΔF/F', fontsize=40, labelpad=20)
-        plt.ylabel(f'{behavior_name.capitalize()} Duration (s)', fontsize=40, labelpad=20)
-        plt.title(f'First {behavior_name.capitalize()} Duration vs. Mean Z-scored ΔF/F', fontsize=45, pad=30)
+    # Modify x-ticks and y-ticks to be larger
+    plt.xticks(fontsize=40)
+    plt.yticks(fontsize=40)
 
-        # Modify x-ticks and y-ticks to be larger
-        plt.xticks(fontsize=40)
-        plt.yticks(fontsize=40)
+    # Display Pearson correlation and number of events in the legend
+    correlation_text = f'r = {r:.3f}\np = {p:.3f}\nn = {len(mean_zscored_dffs)} events'
+    custom_lines = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=20, markeredgecolor='black') 
+        for bout in bouts
+    ]
+    # Append an empty Line2D object for spacing in the legend
+    custom_lines.append(Line2D([0], [0], color='none'))
 
-        # Display Pearson correlation, r², and number of events in the legend
-        correlation_text = f'r = {r:.3f}\nr² = {r_squared:.3f}\nn = {len(mean_zscored_dffs)} events'
-        custom_lines = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor=bout_colors.get(bout, '#000000'), markersize=20, markeredgecolor='black') 
-            for bout in bouts
-        ]
-        custom_lines.append(Line2D([0], [0], linestyle='--', color='black', linewidth=4))
-        legend_labels = [legend_names.get(bout, bout) for bout in bouts] + [correlation_text]
+    legend_labels = [legend_names.get(bout, bout) for bout in bouts] + [correlation_text]
 
-        # Add a legend with bout names and correlation inside the plot at the top left
-        plt.legend(custom_lines, legend_labels, title='Bout', loc='upper left', fontsize=24, title_fontsize=28)
+    # Add a legend with bout names and correlation, placing it according to the provided location
+    plt.legend(custom_lines, legend_labels, title='Agent', loc=legend_loc, fontsize=26, title_fontsize=28)
 
-        # Remove top and right spines and increase the linewidth of the remaining spines
-        sns.despine()
-        ax = plt.gca()
-        ax.spines['left'].set_linewidth(5)
-        ax.spines['bottom'].set_linewidth(5)
-        ax.spines['right'].set_linewidth(5)
-        ax.spines['top'].set_linewidth(5)
+    # Remove top and right spines and increase the linewidth of the remaining spines
+    sns.despine()
+    ax = plt.gca()
+    ax.spines['left'].set_linewidth(5)
+    ax.spines['bottom'].set_linewidth(5)
 
-        plt.tight_layout()
-        plt.savefig('Scatter_First_Investigation_vs_Zscore.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
-        plt.show()
+    plt.tight_layout()
+    plt.savefig('Scatter_First_Investigation_vs_Zscore.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+    plt.show()
 
 
 
