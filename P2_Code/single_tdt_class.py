@@ -12,11 +12,13 @@ from scipy.sparse.linalg import spsolve
 from sklearn.linear_model import LinearRegression
 from scipy.interpolate import interp1d
 
+
 root_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))  # Go up one directory to P2_Code
 # Add the root directory to sys.path
 sys.path.append(root_dir)
 
 class TDTData:
+
     def __init__(self, tdt_data, folder_path):
         self.streams = {}
         self.behaviors = {key: value for key, value in tdt_data.epocs.items() if key not in ['Cam1', 'Tick']}
