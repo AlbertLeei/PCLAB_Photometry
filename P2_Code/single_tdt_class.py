@@ -215,6 +215,27 @@ class TDTData:
             self.isosbestic_standardized = (isosbestic - np.mean(isosbestic)) / np.std(isosbestic)
             self.calcium_standardized = (da - np.mean(da)) / np.std(da)
 
+    def perform_standardization_raw(self):
+            """Standardizes the corrected signals (isosbestic and calcium).
+
+            Args: 
+                isosbestic (arr): The baseline-corrected isosbestic signal.
+                calcium (arr): The baseline-corrected calcium signal.
+
+            Returns:   
+                isosbestic_standardized (arr): The standardized isosbestic signal.
+                calcium_standardized (arr): The standardized calcium signal.
+            """
+            isosbestic = self.streams['ISOS']
+            da = self.streams['DA']
+
+            # print("\nStarting standardization")
+
+            # Standardization: (value - median) / std deviation
+            self.isosbestic_standardized = (isosbestic - np.mean(isosbestic)) / np.std(isosbestic)
+            self.calcium_standardized = (da - np.mean(da)) / np.std(da)
+
+
 
     def align_channels(self):
         """
@@ -242,6 +263,33 @@ class TDTData:
             "isosbestic_fitted": isosbestic_fitted,
             "DA": self.DA_corrected
         }
+
+    def align_channels_raw(self):
+        """
+        Function that performs linear regression between the raw isosbestic (405 nm) and DA (465 nm) signals
+        to align the fitted isosbestic signal with the DA signal. The results are stored in the class as a dictionary.
+        
+        This function grabs the timestamps, raw DA, and ISOS signals directly from the class attributes.
+        """
+        # Ensure that the raw signals are available
+        if len(self.streams['DA']) == 0 or len(self.streams['ISOS']) == 0:
+            raise ValueError("Raw DA and Isosbestic signals are not available. Please ensure raw data is available.")
+
+        # Perform linear regression
+        reg = LinearRegression()
+        
+        n = len(self.streams['DA'])
+        # Fit the isosbestic signal to predict the DA signal
+        reg.fit(self.streams['ISOS'].reshape(n, 1), self.streams['DA'].reshape(n, 1))
+        isosbestic_fitted = reg.predict(self.streams['ISOS'].reshape(n, 1)).reshape(n,)
+
+        # Store aligned signals as a class dictionary
+        self.aligned_signals = {
+            "time": self.timestamps,
+            "isosbestic_fitted": isosbestic_fitted,
+            "DA": self.streams['DA']
+        }
+
 
     def compute_dFF(self):
         """
@@ -362,6 +410,35 @@ class TDTData:
         else:
             raise RuntimeError(f"Input array has too many dimensions. Input: {len(source.shape)}D, Required: 1D")
 
+
+    # def centered_moving_average_with_padding(self, source, window=1):
+    #     """
+    #     Applies a centered moving average to the input signal with edge padding to preserve the signal length.
+        
+    #     Args:
+    #         source (np.array): The signal for which the moving average is computed.
+    #         window (int): The window size used to compute the moving average.
+
+    #     Returns:
+    #         np.array: The centered moving average of the input signal with the original length preserved.
+    #     """
+    #     source = np.array(source)
+
+    #     if len(source.shape) == 1:
+    #         if len(source) < window:
+    #             raise ValueError("Window length cannot be greater than the signal length.")
+
+    #         # Pad the signal by reflecting the edges to avoid cutting
+    #         padded_source = np.pad(source, (window // 2, window // 2), mode='reflect')
+
+    #         # Use convolution to calculate the moving average
+    #         kernel = np.ones(window) / window
+    #         moving_avg = np.convolve(padded_source, kernel, mode='valid')
+
+    #         # Ensure the length of the output matches the length of the original signal
+    #         return moving_avg[:len(source)]
+    #     else:
+    #         raise RuntimeError(f"Input array has too many dimensions. Input: {len(source.shape)}D, Required: 1D")
 
 
     '''********************************** ZSCORE **********************************'''
@@ -801,6 +878,43 @@ class TDTData:
         ax0.legend(loc=2, fontsize=12)
         ax0.set_title("Alignment of Isosbestic and DA signals", fontsize=14)
         ax0.tick_params(axis='both', which='major', labelsize=10)
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_dFF_train_times(self, train_times):
+        """
+        Function to plot the computed dF/F signal stored in self.dFF and plot train_times as dashed vertical lines.
+        
+        Parameters:
+        - train_times: Array of time points to mark as dashed vertical lines.
+        """
+        if self.dFF is None:
+            raise ValueError("dF/F not computed. Please run compute_dFF() before plotting.")
+
+        x = self.aligned_signals["time"]
+        df_f = self.dFF
+        max_x = x[-1]
+
+        fig, ax0 = plt.subplots(figsize=(18, 8), dpi=200)
+        
+        # Plot the ΔF/F signal
+        ax0.plot(x, df_f, alpha=0.8, c="green", lw=2, label="ΔF/F")
+        ax0.axhline(0, color="black", lw=1.5)
+        
+        # Plot train_times as dashed vertical lines
+        for train_time in train_times:
+            ax0.axvline(train_time, color='blue', linestyle='--', linewidth=1.5, label='Train Time' if train_time == train_times[0] else "")
+
+        ax0.set_xlim(0, max_x)
+        ax0.set_xlabel("Time (s)", fontsize=12)
+
+        ax0.set_ylim(min(df_f) - 0.05, max(df_f) + 0.05)
+        ax0.set_ylabel(r"$\Delta$F/F", fontsize=12)
+
+        ax0.set_title(r"$\Delta$F/F Signal", fontsize=14)
+        ax0.legend(loc=2, fontsize=12)
 
         plt.tight_layout()
         plt.show()
