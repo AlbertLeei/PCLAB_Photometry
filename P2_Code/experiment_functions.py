@@ -1159,48 +1159,42 @@ def plot_linear_fit_with_error_bars(df, color='blue', y_limits=None):
     
     # Plot the data with error bars and the fitted line
     plt.figure(figsize=(12, 7))
-    plt.errorbar(
-        x_data, y_data, yerr=y_err, fmt='o', label='DA during Port Entry', 
-        color=color, capsize=10, markersize=20, elinewidth=4, capthick=3
-    )
-    # **Change R² to R in the legend label**
-    plt.plot(
-        x_data, y_fitted, 'r--', 
-        label=f'$R$ = {r_value:.2f}, p = {p_value:.3f}', 
-        linewidth=3
-    )
+    plt.errorbar(x_data, y_data, yerr=y_err, fmt='o', label = 'DA during Port Entry', color=color, 
+                 capsize=10, markersize=20, elinewidth=4, capthick=3)
+    plt.plot(x_data, y_fitted, 'r--', label=f'$R^2$ = {(r_value)**2:.2f}, p = {p_value:.3f}', linewidth=3)
     plt.xlabel('Tone Number', fontsize=36, labelpad=12)
     plt.ylabel('Mean Z-scored ΔF/F', fontsize=36, labelpad=12)
     plt.title('', fontsize=10)
+    plt.legend(fontsize=20)
     
-    # Make the legend text bold and increase fontsize
-    plt.legend(fontsize = 40, prop=dict(weight='bold'))
-    
-    # Set custom x-ticks from 1 to 13 with step 2
+    # Set custom x-ticks from 2 to 16 (whole numbers)
     plt.xticks(np.arange(1, 14, 2), fontsize=26)
-    
+
     # Set y-axis limits if provided
     if y_limits is not None:
         plt.ylim(y_limits)
-    
+
     # Remove the top and right spines
     ax = plt.gca()  # Get current axes
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_linewidth(2)    # Left axis line
     ax.spines['bottom'].set_linewidth(2)  # Bottom axis line
+
     
-    # Adjust tick label sizes
+    # Optionally, adjust tick label sizes
     ax.tick_params(axis='both', which='major', labelsize=32, width=2)  # Adjust tick label size and width
 
+
     plt.tight_layout()
-    plt.savefig('linear.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+    plt.savefig(f'linear.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+
     plt.show()
     
-    # Print the regression results
     print(f"Slope: {slope:.4f}, Intercept: {intercept:.4f}")
     print(f"Pearson correlation coefficient (R): {r_value:.4f}, p-value: {p_value:.4e}")
     
+
     return slope, intercept, r_value, p_value
 
 
