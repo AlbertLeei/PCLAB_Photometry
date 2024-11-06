@@ -389,8 +389,8 @@ def hab_dishab_plot_y_across_bouts_gray(df,  title='Mean Across Bouts', ylabel='
         ax.scatter(df.columns, df.loc[subject], facecolors='none', edgecolors='gray', s=120, alpha=0.6, linewidth=4, zorder=2)
 
     # Add labels, title, and format
-    ax.set_ylabel(ylabel, fontsize=44, labelpad=12)  # Larger y-axis label
-    ax.set_xlabel(xlabel, fontsize=44, labelpad=12)
+    ax.set_ylabel(ylabel, fontsize=28, labelpad=12)  # Larger y-axis label
+    ax.set_xlabel(xlabel, fontsize=40, labelpad=12)
     # ax.set_title(title, fontsize=16)
 
     # Set x-ticks to match the bout labels

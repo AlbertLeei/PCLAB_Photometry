@@ -998,7 +998,7 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
 
     # Add labels, title, and legend
     ax.set_xlabel('Investigation Bout Number', fontsize=44, labelpad=12)
-    ax.set_ylabel('Mean Z-scored ΔF/F', fontsize=44, labelpad=12)
+    ax.set_ylabel('Global Z-scored ΔF/F', fontsize=44, labelpad=12)
 
     # Set y-limits if provided
     if ylim is not None:
@@ -1022,7 +1022,7 @@ def plot_meanDA_across_investigations(mean_da_df, bouts, max_investigations=5, m
     ax.spines['bottom'].set_linewidth(5)
 
     # Add a legend
-    ax.legend(fontsize=26)
+    # ax.legend(fontsize=26)
 
     # Save the plot
     plt.savefig('slope.png', transparent=True, bbox_inches='tight', pad_inches=0.1)
@@ -1163,7 +1163,7 @@ def plot_linear_fit_with_error_bars(df, color='blue', y_limits=None):
                  capsize=10, markersize=20, elinewidth=4, capthick=3)
     plt.plot(x_data, y_fitted, 'r--', label=f'$R^2$ = {(r_value)**2:.2f}, p = {p_value:.3f}', linewidth=3)
     plt.xlabel('Tone Number', fontsize=36, labelpad=12)
-    plt.ylabel('Mean Z-scored ΔF/F', fontsize=36, labelpad=12)
+    plt.ylabel('Global Z-scored ΔF/F', fontsize=36, labelpad=12)
     plt.title('', fontsize=10)
     plt.legend(fontsize=20)
     

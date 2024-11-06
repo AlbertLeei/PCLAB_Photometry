@@ -1098,7 +1098,7 @@ def sp_plot_first_investigation_vs_zscore_4s(self, bouts=None, behavior_name='in
     plt.plot(regression_x, regression_y, color='black', linestyle='--', linewidth=4)
 
     # Add labels and title with larger font sizes
-    plt.xlabel('Baseline Z-scored ΔF/F', fontsize=44, labelpad=20)
+    plt.xlabel('Event Induced Z-scored ΔF/F', fontsize=44, labelpad=20)
     plt.ylabel(f'Bout Duration (s)', fontsize=44, labelpad=20)
 
     # Modify x-ticks and y-ticks to be larger

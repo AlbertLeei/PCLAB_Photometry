@@ -570,7 +570,7 @@ class GroupTDTData:
         plt.plot(mean_zscored_dffs, slope * mean_zscored_dffs + intercept, color='black', linestyle='--', linewidth=4)
 
         # Add labels and title with larger font sizes
-        plt.xlabel(f'Baseline Z-scored ΔF/F', fontsize=44, labelpad=20)
+        plt.xlabel(f'Event Induced Z-scored ΔF/F', fontsize=44, labelpad=20)
         plt.ylabel(f'Bout Duration (s)', fontsize=44, labelpad=20)
 
         # Apply y-axis limits if provided

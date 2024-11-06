@@ -397,11 +397,12 @@ class TDTData:
     def compute_zscore(self, method='standard', baseline_start=None, baseline_end=None):
         """
         Computes the z-score of the delta F/F (dFF) signal and saves it as a class variable.
+        The baseline period is used as a reference point, making the entire signal relative to it.
 
         Parameters:
         method (str): The method used to compute the z-score. Options are:
             'standard' - Computes the z-score using the standard method (z = (x - mean) / std).
-            'baseline' - Computes the z-score using a baseline period. Requires baseline_start and baseline_end.
+            'baseline' - Computes the z-score using a baseline period, with the entire signal relative to this baseline.
             'modified' - Computes the z-score using a modified z-score method (z = 0.6745 * (x - median) / MAD).
         baseline_start (float): The start time of the baseline period for baseline z-score computation.
         baseline_end (float): The end time of the baseline period for baseline z-score computation.
@@ -412,21 +413,27 @@ class TDTData:
         dff = np.array(self.dFF)
         
         if method == 'standard':
+            # Standard z-score over the entire signal
             self.zscore = (dff - np.nanmean(dff)) / np.nanstd(dff)
         
         elif method == 'baseline':
             if baseline_start is None or baseline_end is None:
                 raise ValueError("Baseline start and end times must be provided for baseline z-score computation.")
             
+            # Identify baseline period indices
             baseline_indices = np.where((self.timestamps >= baseline_start) & (self.timestamps <= baseline_end))[0]
             if len(baseline_indices) == 0:
                 raise ValueError("No baseline data found within the specified baseline period.")
             
+            # Calculate mean and standard deviation for baseline period
             baseline_mean = np.nanmean(dff[baseline_indices])
             baseline_std = np.nanstd(dff[baseline_indices])
+
+            # Compute z-score, using the baseline mean and std as the reference
             self.zscore = (dff - baseline_mean) / baseline_std
-        
+
         elif method == 'modified':
+            # Modified z-score (using median and MAD)
             median = np.nanmedian(dff)
             mad = np.nanmedian(np.abs(dff - median))
             self.zscore = 0.6745 * (dff - median) / mad
@@ -561,6 +568,86 @@ class TDTData:
 
 
     '''********************************** PLOTTING **********************************'''
+    def plot_behavior_event_section(self, behavior_name, plot_type='zscore', start_time=None, end_time=None, ax=None):
+        """
+        Plot Delta F/F (dFF) or z-score with behavior events for a specified time section. Can be used to plot in a given Axes object or individually.
+
+        Parameters:
+        - behavior_name: The name of the behavior to plot. Use 'all' to plot all behaviors.
+        - plot_type: The type of plot. Options are 'dFF' or 'zscore'.
+        - start_time: The start time of the section to plot (in seconds).
+        - end_time: The end time of the section to plot (in seconds).
+        - ax: An optional matplotlib Axes object. If provided, the plot will be drawn on this Axes.
+        """
+        # Validate and prepare the data
+        y_data = []
+        if plot_type == 'dFF':
+            if self.dFF is None:
+                self.compute_dFF()
+            y_data = self.dFF
+            y_label = r'$\Delta$F/F'
+            line_color = 'black'  # dFF color
+        elif plot_type == 'zscore':
+            if self.zscore is None:
+                self.compute_zscore()
+            y_data = self.zscore
+            y_label = 'Event Induced Z-score'
+            line_color = 'red'  # z-score color
+        else:
+            raise ValueError("Invalid plot_type. Choose from 'dFF' or 'zscore'.")
+
+        # Filter data based on start and end time
+        if start_time is not None and end_time is not None:
+            indices = (self.timestamps >= start_time) & (self.timestamps <= end_time)
+            timestamps = self.timestamps[indices]
+            y_data = np.array(y_data)[indices]
+        else:
+            timestamps = self.timestamps
+
+        # Create plot if no axis provided
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(9, 6))
+
+        # Plot the signal with the specified color
+        ax.plot(timestamps, y_data, linewidth=2, color=line_color, label=plot_type)  # Ensure signal has label for legend
+
+        # Define specific colors for behaviors
+        behavior_colors = {'Investigation': 'dodgerblue', 'Approach': 'green', 'Defeat': 'red'}
+
+        # Plot only the first occurrence of the specified behavior within the time range
+        if behavior_name in self.behaviors:
+            behavior_onsets = self.behaviors[behavior_name].onset
+            behavior_offsets = self.behaviors[behavior_name].offset
+            color = behavior_colors.get(behavior_name, 'dodgerblue')
+            
+            for on, off in zip(behavior_onsets, behavior_offsets):
+                # Check if the behavior event falls within the specified time range
+                if (start_time is None or on >= start_time) and (end_time is None or off <= end_time):
+                    ax.axvspan(on, off, alpha=0.25, label=behavior_name, color=color)
+                    break  # Plot only the first occurrence
+        else:
+            raise ValueError(f"Behavior event '{behavior_name}' not found in behaviors.")
+
+        # Customize plot appearance
+        ax.set_ylabel(y_label, fontsize=18)  # Increase font size for y-axis label
+        ax.set_xlabel('Time (s)', fontsize=18)  # Set custom x-axis label
+        ax.tick_params(axis='y', labelsize=16)  # Increase font size for y-axis ticks
+        ax.spines['top'].set_visible(False)      # Remove top spine
+        ax.spines['right'].set_visible(False)    # Remove right spine
+        ax.set_xticks([])  # Remove the actual time ticks on the x-axis
+
+        # Display legend for the signal and only the specified behavior
+        ax.legend()
+
+        # Display the plot
+        if ax is None:
+            plt.tight_layout()
+            plt.show()
+
+
+
+
+
     def plot_behavior_event(self, behavior_name, plot_type='zscore', ax=None):
         """
         Plot Delta F/F (dFF) or z-score with behavior events. Can be used to plot in a given Axes object or individually.
