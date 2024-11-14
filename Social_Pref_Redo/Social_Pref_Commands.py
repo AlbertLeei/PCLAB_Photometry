@@ -191,9 +191,6 @@ def calculate_average_sniff_duration_per_bout(behavior_dict, bouts=['novel', 'lo
     return average_sniff_duration_df
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-
 def plot_y_across_bouts_colors(df, title='Mean Across Bouts', ylabel='Mean Value', custom_xtick_labels=None, custom_xtick_colors=None, ylim=None, 
                                bar_color='#00B7D7', yticks_increment=None, xlabel='intruder', figsize=(12, 7), pad_inches=0.1):
     """
